@@ -3,7 +3,7 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 # Copy package files and install dependencies
-COPY package.json package-lock.json* ./
+COPY package.json package-lock.json ./
 RUN npm ci
 
 # Copy application code
@@ -17,15 +17,14 @@ FROM node:20-alpine AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
-ENV PORT=8080
+ENV PORT=8080 
 
-# Copy necessary files from build stage
+# Copy only necessary files for running the app AND installing prod dependencies
 COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/package.json ./package.json
+COPY package.json package-lock.json ./
 
-# Expose the port the app runs on
+# Install ONLY production dependencies based on the copied package.json and lockfile
+RUN npm ci --omit=dev
+
 EXPOSE 8080
-
-# Run the application
-CMD ["npm", "run", "start:prod"]
+CMD ["node", "dist/main.js"]
