@@ -5,7 +5,7 @@ WORKDIR /app
 
 # Copy requirements and install dependencies
 COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
 
 # Production stage
 FROM python:3.11-slim AS runner
@@ -17,11 +17,12 @@ COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/pytho
 COPY . .
 
 # Set environment variables
-ENV PORT=8080
 ENV PYTHONUNBUFFERED=1
+ENV HOST=0.0.0.0
+ENV PIP_ROOT_USER_ACTION=ignore
 
 # Expose the port the app runs on
 EXPOSE 8080
 
 # Run the application
-CMD uvicorn main:app --host 0.0.0.0 --port $PORT
+CMD ["uvicorn", "main:app", "--host", "$HOST", "--port", "$PORT"]
