@@ -1,0 +1,22 @@
+{
+  "hosting": {
+    "source": ".", 
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "frameworksBackend": {
+      "region": "us-east5" 
+    },
+    "rewrites": [
+      {
+        "source": "/api/**",
+        "run": {
+          "serviceId": "bff",
+          "region": "us-east5"
+        }
+      }
+    ]
+  }
+}

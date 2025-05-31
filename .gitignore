@@ -158,6 +158,10 @@ __pycache__/
 *.lib
 *.out
 *.class
+# Firebase files
+firebase-debug.log
+.firebase/
+
 
 # Ignore the auto-generated cleanup script and URLs file
 cleanup-dev-services.sh

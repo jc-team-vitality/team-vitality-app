@@ -3,6 +3,8 @@ import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  // Prefix all routes with /api
+  app.setGlobalPrefix('api');
   // Use the provided PORT environment variable or default to 3001
   const port = process.env.PORT || 3001;
   await app.listen(port);
