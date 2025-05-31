@@ -47,7 +47,6 @@ jobs:
         uses: FirebaseExtended/action-hosting-deploy@v0 # Use official Firebase action
         with:
           repoToken: '${{ secrets.GITHUB_TOKEN }}' # For GitHub deployment statuses
-          firebaseServiceAccount: '${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}' # Service account for Firebase action
           channelId: live # Deploy to the live channel (or use 'preview' for PRs)
           projectId: '${{ secrets.GCP_PROJECT_ID }}'
           target: hosting # Specify deploying to hosting
