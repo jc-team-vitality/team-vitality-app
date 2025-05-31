@@ -1,0 +1,60 @@
+# This Cloud Build file applies database migrations using Flyway.
+# It should be triggered by pushes to the 'database-migrations' directory.
+
+steps:
+# Step 1: Download and unzip the Flyway command-line tool.
+  - name: 'gcr.io/cloud-builders/wget'
+    args: ['https://repo1.maven.org/maven2/org/flywaydb/flyway-commandline/9.22.3/flyway-commandline-9.22.3-linux-x64.tar.gz']
+    id: 'download-flyway'
+
+  - name: 'gcr.io/cloud-builders/gcloud'
+    args: ['tar', '-xzf', 'flyway-commandline-9.22.3-linux-x64.tar.gz']
+    id: 'unzip-flyway'
+    waitFor: ['download-flyway']
+
+# Step 2: Download and prepare the Cloud SQL Auth Proxy.
+  - name: 'gcr.io/cloud-builders/wget'
+    args: ['https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/v2.8.2/cloud-sql-proxy.linux.amd64']
+    id: 'download-proxy'
+
+  - name: 'gcr.io/cloud-builders/gcloud'
+    args: ['mv', 'cloud-sql-proxy.linux.amd64', 'cloud-sql-proxy']
+    id: 'rename-proxy'
+    waitFor: ['download-proxy']
+
+  - name: 'gcr.io/cloud-builders/gcloud'
+    args: ['chmod', '+x', 'cloud-sql-proxy']
+    id: 'make-proxy-executable'
+    waitFor: ['rename-proxy']
+
+# Step 3: Start the Cloud SQL Auth Proxy as a background process.
+  - name: 'gcr.io/cloud-builders/gcloud'
+    args: ['./cloud-sql-proxy', '--project=${_PROJECT_ID}', '--region=${_DB_REGION}', '${_DB_INSTANCE_NAME}']
+    id: 'start-proxy'
+    waitFor: ['make-proxy-executable']
+
+# Step 4: Retrieve the database password from GCP Secret Manager.
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'get-db-password'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        gcloud secrets versions access latest --secret="teamvitality-db-password" > /workspace/db_password.txt
+
+# Step 5: Run Flyway migrations, connecting through the proxy.
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'run-migrations'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        # Allow a few seconds for the proxy to initialize the connection.
+        sleep 5
+        ./flyway-9.22.3/flyway  \
+        -url="jdbc:postgresql://127.0.0.1:5432/${_DB_NAME}"  \
+        -user="${_DB_USER}"  \
+        -password="$(cat /workspace/db_password.txt)"  \
+        -locations="filesystem:./database-migrations/sql"  \
+        migrate
+    waitFor: ['start-proxy', 'get-db-password', 'unzip-flyway']

@@ -1,11 +1,29 @@
 #!/bin/bash
 
+set -e
+
 echo "========================================================"
 echo "  TeamVitality - Starting All Services in Development Mode"
 echo "========================================================"
 echo "Services will run in the background."
 echo "To stop all services started by this script, try 'pkill -P $$' or close this terminal."
 echo "Alternatively, find PIDs with 'jobs -p' and use 'kill <PID>'."
+echo "========================================================"
+
+echo -e "\nStarting local PostgreSQL database using docker-compose..."
+docker-compose up -d db
+
+# Wait for PostgreSQL to be ready
+until docker exec teamvitality-postgres-local pg_isready -U admin > /dev/null 2>&1; do
+  echo "Waiting for PostgreSQL to be ready..."
+  sleep 2
+done
+echo "PostgreSQL is ready."
+
+echo -e "\nRunning Flyway migrations..."
+docker run --rm --network=host -v $(pwd)/database-migrations/sql:/flyway/sql flyway/flyway:latest -url=jdbc:postgresql://localhost:5432/teamvitality_dev -user=admin -password=password migrate
+
+echo "Flyway migrations complete."
 echo "========================================================"
 
 # Start web-application
