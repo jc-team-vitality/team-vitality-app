@@ -7,7 +7,7 @@
       "**/node_modules/**"
     ],
     "frameworksBackend": {
-      "region": "us-east5" 
+      "region": "us-east4" 
     },
     "rewrites": [
       {
