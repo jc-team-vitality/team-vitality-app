@@ -14,6 +14,7 @@ from typing import Optional, Literal  # Add Literal
 from uuid import UUID
 from datetime import datetime, timezone, timedelta
 import jwt
+from app.utils.kms_utils import decrypt_data_with_kms
 
 # --- Service: Identity Provider Config from DB ---
 async def get_identity_provider_config_from_db(
@@ -295,8 +296,6 @@ async def fetch_gcp_secret(
         raise HTTPException(status_code=500, detail=f"Failed to retrieve critical secret: {secret_id}")
 
 # --- Service: Decrypt data with KMS (imported for internal_router) ---
-from app.utils.kms_utils import decrypt_data_with_kms
-
 async def process_account_link(
     idp_config: IdentityProviderConfig,
     new_idp_user_claims: dict,

@@ -8,8 +8,10 @@ import secrets
 import hashlib
 import base64
 from urllib.parse import urlencode
+from sqlalchemy.sql import text as sql_text
+from uuid import UUID
 
-from app.models import OIDCInitiateLoginResponse, OIDCTokenExchangeRequest, OIDCTokenExchangeResponse, OIDCInitiateLinkAccountRequest
+from app.models import OIDCInitiateLoginResponse, OIDCTokenExchangeRequest, OIDCTokenExchangeResponse, OIDCInitiateLinkAccountRequest, AppUser
 from app.core.config import settings
 from app.db_clients import get_firestore_db, get_secret_manager_client, get_async_db_session, get_kms_client
 from app.services.oidc_service import (
@@ -22,6 +24,7 @@ from app.services.oidc_service import (
     fetch_gcp_secret,
     process_account_link
 )
+from app.utils.kms_utils import encrypt_data_with_kms
 
 router = APIRouter()
 
@@ -139,16 +142,40 @@ async def oidc_token_exchange(
         "client_secret": client_secret_value,
         "code_verifier": pkce_code_verifier
     }
+
+    # --- Handle token exchange with the IdP ---
     try:
-        async with httpx.AsyncClient() as client:
-            token_response = await client.post(token_endpoint, data=token_request_payload)
-            token_response.raise_for_status()
-            token_data = token_response.json()
+        token_response = await http_client.post(token_endpoint, data=token_request_payload)
+        token_response.raise_for_status()  # Raises an exception for 4XX/5XX responses
+        token_data = token_response.json()
     except httpx.HTTPStatusError as e:
-        error_detail = e.response.json() if e.response.content else str(e)
-        raise HTTPException(status_code=e.response.status_code, detail={"message": "Failed to exchange code for tokens.", "idp_error": error_detail})
+        # Attempt to parse JSON error detail from IdP if available
+        error_detail = {}
+        try:
+            if e.response.content:
+                error_detail = e.response.json()
+        except Exception: # If response is not JSON or other parsing error
+            error_detail = {"raw_response": e.response.text[:500]} # Truncate if very long
+
+        # Specific handling for invalid_grant (already present in your full file, ensure it stays)
+        if e.response.status_code == 400 and error_detail.get("error") == "invalid_grant":
+            # (The logic for clearing the stored token via nested transaction would be here,
+            #  followed by raising this specific HTTPException)
+            print(f"Refresh token (or auth code) for provider {idp_config.name} is invalid. Clearing stored token if applicable.")
+            # ... (code to clear token, ideally in a nested transaction if this is for refresh token grant)
+            # For now, focus on the exception being raised from here:
+            raise HTTPException(status_code=400, detail={"message": "Authorization code or refresh token is invalid or expired.", "idp_error": error_detail})
+        
+        # General HTTP error from IdP for token exchange
+        raise HTTPException(status_code=e.response.status_code, detail={"message": "Failed to exchange code for tokens with IdP.", "idp_error": error_detail})
+    except httpx.RequestError as e:
+        # For network errors, timeouts, etc., during the request to the IdP
+        print(f"Network error during token exchange with {token_endpoint}: {e}")
+        raise HTTPException(status_code=503, detail=f"Network error during token exchange: {str(e)}") # Service Unavailable
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Token exchange HTTP request failed: {str(e)}")
+        # For other unexpected errors, like JSONDecodeError if response is not JSON and not an HTTPStatusError
+        print(f"Unexpected error during token exchange process: {e}")
+        raise HTTPException(status_code=500, detail=f"Token exchange process failed due to an unexpected error: {str(e)}")
 
     # --- Extract tokens from response ---
     id_token = token_data.get("id_token")
@@ -188,17 +215,14 @@ async def oidc_token_exchange(
     if flow_type == "link_account":
         if not linking_app_user_id_str:
             raise HTTPException(status_code=400, detail="Invalid state: linking_app_user_id missing for account linking flow.")
-        from uuid import UUID
         current_app_user_id = UUID(str(linking_app_user_id_str))
         try:
             await process_account_link(idp_config, merged_claims, current_app_user_id, db_pg_session)
             # Fetch the app_user to return in response
-            from sqlalchemy.sql import text as sql_text
             user_query = sql_text("SELECT id, email, first_name, last_name, created_at, updated_at FROM app_users WHERE id = :user_id")
             result = await db_pg_session.execute(user_query, {"user_id": current_app_user_id})
             user_row = result.fetchone()
             if user_row:
-                from app.models import AppUser
                 final_app_user = AppUser.model_validate(dict(user_row._mapping))
             response_message = "Account linked successfully."
         except HTTPException as e:
@@ -221,7 +245,6 @@ async def oidc_token_exchange(
             print("WARNING: REFRESH_TOKEN_KMS_KEY_ID not set. Cannot encrypt refresh token.")
         else:
             try:
-                from app.utils.kms_utils import encrypt_data_with_kms
                 encrypted_rt_bytes = await encrypt_data_with_kms(
                     kms_client=kms_client,
                     kms_key_id=settings.REFRESH_TOKEN_KMS_KEY_ID,

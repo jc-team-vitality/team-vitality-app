@@ -5,16 +5,14 @@ from fastapi import FastAPI
 
 # Local application imports
 from .core.config import settings
-from .routers import idp_configs as idp_configs_router, oidc as oidc_router, internal as internal_router
-
-# Import service functions from oidc_service.py
+from .routers import oidc_router, internal_router, idp_configs
 
 app = FastAPI(title=settings.PROJECT_NAME)
 
 app.include_router(oidc_router.router, prefix="/oidc", tags=["OIDC Authentication"])
 app.include_router(internal_router.router, prefix="/internal", tags=["Internal API"])
 app.include_router(
-    idp_configs_router.router,
+    idp_configs.router,
     prefix="/admin/identity-providers",
     tags=["Admin - Identity Provider Configurations"]
 )
