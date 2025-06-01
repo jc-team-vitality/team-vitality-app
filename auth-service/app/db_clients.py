@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.sql import text
 from typing import AsyncGenerator
+from google.cloud import kms_v1
 
 # Initialize Firestore client
 # This will use Application Default Credentials when deployed on GCP (e.g., Cloud Run)
@@ -59,3 +60,22 @@ async def get_async_db_session() -> AsyncGenerator[AsyncSession, None]:
             raise
         finally:
             await session.close()
+
+# Initialize Cloud KMS client
+kms_client = None
+if settings.GCP_PROJECT_ID and settings.REFRESH_TOKEN_KMS_KEY_ID: # Ensure project ID is available
+    try:
+        kms_client = kms_v1.KeyManagementServiceClient()
+        # Verify key path format or existence (optional, basic check)
+        if not settings.REFRESH_TOKEN_KMS_KEY_ID.startswith("projects/"):
+            print(f"WARNING: REFRESH_TOKEN_KMS_KEY_ID ({settings.REFRESH_TOKEN_KMS_KEY_ID}) might not be a full key path. KMS client initialized but key path might be an issue.")
+    except Exception as e:
+        print(f"WARNING: Failed to initialize KMS client: {e}")
+else:
+    print("WARNING: GCP_PROJECT_ID or REFRESH_TOKEN_KMS_KEY_ID not set. KMS client not initialized.")
+
+# Dependency for FastAPI to get KMS client
+async def get_kms_client():
+    if kms_client is None:
+        raise RuntimeError("KMS client not initialized. Check GCP_PROJECT_ID and REFRESH_TOKEN_KMS_KEY_ID settings.")
+    return kms_client

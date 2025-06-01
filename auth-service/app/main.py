@@ -19,7 +19,7 @@ from sqlalchemy.sql import text
 
 # Local application imports
 from .core.config import settings
-from .db_clients import get_firestore_db, get_secret_manager_client, get_async_db_session
+from .db_clients import get_firestore_db, get_secret_manager_client, get_async_db_session, get_kms_client
 from .models import (
     IdentityProviderConfig,
     OIDCInitiateLoginResponse,
@@ -30,6 +30,8 @@ from .models import (
     OIDCWellKnownCache,
     JWKSCache # Add JWKSCache import
 )
+from .utils.kms_utils import encrypt_data_with_kms
+from google.cloud import kms_v1
 
 app = FastAPI(title=settings.PROJECT_NAME)
 
@@ -353,7 +355,8 @@ async def oidc_token_exchange(
     db: firestore_v1.AsyncClient = Depends(get_firestore_db),
     http_client: httpx.AsyncClient = Depends(get_http_client),
     sm_client: secretmanager_v1.SecretManagerServiceClient = Depends(get_secret_manager_client),
-    db_pg_session: AsyncSession = Depends(get_async_db_session)
+    db_pg_session: AsyncSession = Depends(get_async_db_session),
+    kms_client: kms_v1.KeyManagementServiceClient = Depends(get_kms_client) # Inject KMS client
 ):
     cached_state_data = await get_cached_oidc_state(request_data.state, db)
     if not cached_state_data:
@@ -428,8 +431,32 @@ async def oidc_token_exchange(
         raise e
 
     if refresh_token and idp_config.supports_refresh_token:
-        print(f"REFRESH_TOKEN_TODO: Encrypt refresh token and store its reference for user {app_user.id} and provider {idp_config.name}.")
-        pass
+        print(f"Attempting to encrypt and store refresh token for user {app_user.id}, provider {idp_config.name}")
+        if not settings.REFRESH_TOKEN_KMS_KEY_ID:
+            print("WARNING: REFRESH_TOKEN_KMS_KEY_ID not set. Cannot encrypt refresh token.")
+        else:
+            try:
+                encrypted_rt_bytes = await encrypt_data_with_kms(
+                    kms_client=kms_client,
+                    kms_key_id=settings.REFRESH_TOKEN_KMS_KEY_ID,
+                    plaintext=refresh_token
+                )
+                update_link_query = text("""
+                    UPDATE user_provider_links
+                    SET encrypted_refresh_token = :encrypted_refresh_token, updated_at = NOW()
+                    WHERE user_id = :user_id AND provider_id = :provider_id
+                """)
+                await db_pg_session.execute(
+                    update_link_query,
+                    {
+                        "encrypted_refresh_token": encrypted_rt_bytes,
+                        "user_id": app_user.id,
+                        "provider_id": idp_config.id
+                    }
+                )
+                print(f"Encrypted refresh token stored for user {app_user.id}, provider {idp_config.name}")
+            except Exception as e:
+                print(f"ERROR: Failed to encrypt and store refresh token: {e}")
 
     return OIDCTokenExchangeResponse(
         status="success",

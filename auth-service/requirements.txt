@@ -8,3 +8,4 @@ google-cloud-firestore
 google-cloud-secret-manager
 SQLAlchemy
 asyncpg
+google-cloud-kms
