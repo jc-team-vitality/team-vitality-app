@@ -26,19 +26,33 @@ async def initiate_oidc_login(
     db: firestore_v1.AsyncClient = Depends(get_firestore_db),
     db_pg_session: AsyncSession = Depends(get_async_db_session)
 ):
+    """
+    Initiates the OIDC login flow for a given identity provider.
+
+    This endpoint generates the necessary OIDC state, nonce, and PKCE code challenge, caches them,
+    and constructs the authorization URL for the client to redirect the user to the IdP's login page.
+    """
+    # --- Retrieve and validate the IdP configuration ---
     idp_config = await get_identity_provider_config_from_db(provider_name, db_pg_session)
     if not idp_config or not idp_config.is_active:
         raise HTTPException(status_code=404, detail=f"Provider '{provider_name}' not found or not active.")
+
+    # --- Generate OIDC state, nonce, and PKCE code challenge ---
     import secrets, hashlib, base64
     state = secrets.token_urlsafe(32)
     nonce = secrets.token_urlsafe(32)
     code_verifier = secrets.token_urlsafe(64)
     code_challenge_hash = hashlib.sha256(code_verifier.encode('utf-8')).digest()
     code_challenge = base64.urlsafe_b64encode(code_challenge_hash).decode('utf-8').rstrip('=')
+
+    # --- Cache the OIDC state for later validation ---
     await cache_oidc_state(state, nonce, code_verifier, provider_name, db)
+
+    # --- Build the authorization URL for the IdP ---
     bff_callback_uri = settings.BFF_OIDC_CALLBACK_URI
     authorization_endpoint_base = str(idp_config.issuer_uri)
     if provider_name == "google":
+        # Google uses a fixed authorization endpoint
         actual_authorization_endpoint = "https://accounts.google.com/o/oauth2/v2/auth"
     else:
         from urllib.parse import urljoin
@@ -56,6 +70,8 @@ async def initiate_oidc_login(
     }
     query_string = urlencode(params)
     authorization_url = f"{actual_authorization_endpoint}?{query_string}"
+
+    # --- Return the authorization URL and state to the client ---
     return OIDCInitiateLoginResponse(authorization_url=authorization_url, state=state)
 
 @router.post("/token/exchange", response_model=OIDCTokenExchangeResponse)
@@ -67,12 +83,22 @@ async def oidc_token_exchange(
     db_pg_session: AsyncSession = Depends(get_async_db_session),
     kms_client: kms_v1.KeyManagementServiceClient = Depends(get_kms_client)
 ):
+    """
+    Exchanges an OIDC authorization code for tokens and provisions the user in the application.
+
+    This endpoint validates the OIDC state, exchanges the code for tokens, validates the ID token,
+    fetches user info, and provisions the user in the app database. If a refresh token is present and supported,
+    it is encrypted and stored for future use.
+    """
+    # --- Validate the OIDC state and retrieve cached data ---
     cached_state_data = await get_cached_oidc_state(request_data.state, db)
     if not cached_state_data:
         raise HTTPException(status_code=400, detail="Invalid or expired state parameter. Login flow may have timed out.")
     provider_name = cached_state_data["provider_name"]
     expected_nonce = cached_state_data["nonce"]
     pkce_code_verifier = cached_state_data["pkce_code_verifier"]
+
+    # --- Retrieve IdP configuration and .well-known endpoints ---
     idp_config = await get_identity_provider_config_from_db(provider_name, db_pg_session)
     if not idp_config:
         raise HTTPException(status_code=500, detail=f"Configuration for provider '{provider_name}' not found unexpectedly.")
@@ -80,6 +106,8 @@ async def oidc_token_exchange(
     if not well_known_config or not well_known_config.get("token_endpoint"):
         raise HTTPException(status_code=500, detail=f"Could not retrieve token endpoint for provider '{provider_name}'.")
     token_endpoint = well_known_config["token_endpoint"]
+
+    # --- Retrieve client secret from Secret Manager ---
     if not idp_config.client_secret_name:
         raise HTTPException(status_code=500, detail=f"Client secret name not configured for provider '{provider_name}'.")
     client_secret_value = await fetch_gcp_secret(
@@ -88,6 +116,8 @@ async def oidc_token_exchange(
     )
     if not client_secret_value:
         raise HTTPException(status_code=500, detail=f"Failed to retrieve client secret for provider '{provider_name}'.")
+
+    # --- Exchange authorization code for tokens ---
     token_request_payload = {
         "grant_type": "authorization_code",
         "code": request_data.authorization_code,
@@ -106,11 +136,15 @@ async def oidc_token_exchange(
         raise HTTPException(status_code=e.response.status_code, detail={"message": "Failed to exchange code for tokens.", "idp_error": error_detail})
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Token exchange HTTP request failed: {str(e)}")
+
+    # --- Extract tokens from response ---
     id_token = token_data.get("id_token")
     access_token = token_data.get("access_token")
     refresh_token = token_data.get("refresh_token")
     if not id_token:
         raise HTTPException(status_code=500, detail="ID token not found in token response.")
+
+    # --- Validate the ID token and extract user claims ---
     user_claims = await validate_id_token(
         id_token,
         idp_config,
@@ -119,6 +153,8 @@ async def oidc_token_exchange(
         http_client,
         db
     )
+
+    # --- Fetch userinfo from the IdP ---
     userinfo_endpoint = well_known_config.get("userinfo_endpoint")
     if not userinfo_endpoint:
         raise HTTPException(status_code=500, detail="Userinfo endpoint not found in .well-known config.")
@@ -129,13 +165,19 @@ async def oidc_token_exchange(
         userinfo_claims = userinfo_response.json()
     except Exception as e:
         raise HTTPException(status_code=500, detail="Failed to fetch userinfo from IdP.")
+
+    # --- Merge claims from ID token and userinfo endpoint ---
     merged_claims = {**user_claims, **userinfo_claims}
+
+    # --- Provision the user in the application database ---
     try:
         app_user = await jit_provision_user(idp_config, merged_claims, db_pg_session)
     except HTTPException as e:
         if e.status_code == 409:
             return OIDCTokenExchangeResponse(status="email_conflict", message=e.detail, user_info=None)
         raise e
+
+    # --- Encrypt and store refresh token if present and supported ---
     if refresh_token and idp_config.supports_refresh_token:
         if settings.REFRESH_TOKEN_KMS_KEY_ID:
             from app.utils.kms_utils import encrypt_data_with_kms
@@ -161,6 +203,8 @@ async def oidc_token_exchange(
                 )
             except Exception:
                 pass
+
+    # --- Return the authentication result and user info ---
     return OIDCTokenExchangeResponse(
         status="success",
         message="User authenticated successfully.",

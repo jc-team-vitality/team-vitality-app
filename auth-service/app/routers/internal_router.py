@@ -22,11 +22,21 @@ async def internal_refresh_access_token(
     sm_client: secretmanager_v1.SecretManagerServiceClient = Depends(get_secret_manager_client),
     kms_client: kms_v1.KeyManagementServiceClient = Depends(get_kms_client)
 ):
+    """
+    Refreshes an access token using a stored refresh token for a given user and provider.
+
+    This endpoint validates the provider and user link, decrypts the stored refresh token,
+    calls the IdP's token endpoint to obtain a new access token, and handles refresh token rotation
+    and invalidation. If a new refresh token is returned, it is encrypted and stored.
+    """
+    # --- Retrieve and validate the IdP configuration ---
     idp_config = await get_identity_provider_config_from_db(request_data.provider_name, db_pg_session)
     if not idp_config or not idp_config.is_active:
         raise HTTPException(status_code=404, detail=f"Provider '{request_data.provider_name}' not found or not active.")
     if not idp_config.supports_refresh_token:
         raise HTTPException(status_code=400, detail=f"Refresh token not supported by provider '{request_data.provider_name}'.")    
+
+    # --- Retrieve the encrypted refresh token for the user/provider link ---
     link_query = sql_text("""
         SELECT encrypted_refresh_token 
         FROM user_provider_links
@@ -37,6 +47,8 @@ async def internal_refresh_access_token(
     if not link_row or not link_row.encrypted_refresh_token:
         raise HTTPException(status_code=404, detail="No refresh token found for this user and provider, or user/provider link does not exist.")
     encrypted_rt_bytes = link_row.encrypted_refresh_token
+
+    # --- Retrieve client secret from Secret Manager ---
     if not idp_config.client_secret_name:
         raise HTTPException(status_code=500, detail=f"Client secret name not configured for provider '{request_data.provider_name}'.")
     client_secret_value = await fetch_gcp_secret(
@@ -45,6 +57,8 @@ async def internal_refresh_access_token(
     )
     if not client_secret_value:
         raise HTTPException(status_code=500, detail=f"Failed to retrieve client secret for provider '{request_data.provider_name}'.")
+
+    # --- Decrypt the stored refresh token using KMS ---
     from app.core.config import settings
     if not settings.REFRESH_TOKEN_KMS_KEY_ID:
         raise HTTPException(status_code=500, detail="Refresh token KMS key not configured.")
@@ -56,10 +70,14 @@ async def internal_refresh_access_token(
         )
     except Exception:
         raise HTTPException(status_code=500, detail="Failed to process stored refresh token.")
+
+    # --- Fetch the IdP's token endpoint from .well-known config ---
     well_known_config = await fetch_idp_well_known_config_impl(idp_config.well_known_uri, db_firestore, http_client)
     if not well_known_config or not well_known_config.get("token_endpoint"):
         raise HTTPException(status_code=500, detail=f"Could not retrieve token endpoint for provider '{request_data.provider_name}'.")
     token_endpoint = well_known_config["token_endpoint"]
+
+    # --- Prepare the refresh token request payload ---
     refresh_payload = {
         "grant_type": "refresh_token",
         "refresh_token": decrypted_refresh_token,
@@ -67,10 +85,12 @@ async def internal_refresh_access_token(
         "client_secret": client_secret_value,
     }
     try:
+        # --- Call the IdP's token endpoint to refresh the access token ---
         token_response = await http_client.post(token_endpoint, data=refresh_payload)
         token_response.raise_for_status()
         new_token_data = token_response.json()
     except httpx.HTTPStatusError as e:
+        # --- Handle invalid_grant and clear stored refresh token if needed ---
         error_detail = e.response.json() if e.response.content else str(e)
         if e.response.status_code == 400 and error_detail.get("error") == "invalid_grant":
             print(f"Refresh token for user {request_data.user_id}, provider {request_data.provider_name} is invalid. Attempting to clear stored token independently.")
@@ -102,12 +122,15 @@ async def internal_refresh_access_token(
         raise HTTPException(status_code=e.response.status_code, detail={"message": "Failed to refresh access token.", "idp_error": error_detail})
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Access token refresh HTTP request failed: {str(e)}")
+
+    # --- Extract new tokens from the response ---
     new_access_token = new_token_data.get("access_token")
     new_expires_in = new_token_data.get("expires_in")
     new_scopes = new_token_data.get("scope")
     if not new_access_token:
         raise HTTPException(status_code=500, detail="New access token not found in refresh response.")
-    # --- Refresh Token Rotation Logic ---
+
+    # --- Handle refresh token rotation: encrypt and store new refresh token if present ---
     new_refresh_token_str = new_token_data.get("refresh_token")
     if new_refresh_token_str:
         print(f"New refresh token received during rotation for user {request_data.user_id}, provider {request_data.provider_name}. Updating stored token.")
@@ -136,6 +159,8 @@ async def internal_refresh_access_token(
                 print("Successfully updated rotated refresh token in DB.")
             except Exception as e:
                 print(f"ERROR: Failed to encrypt and store rotated refresh token: {e}")
+
+    # --- Return the new access token and related info ---
     return InternalTokenRefreshResponse(
         access_token=new_access_token,
         expires_in=new_expires_in,
