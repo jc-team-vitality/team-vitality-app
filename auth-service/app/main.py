@@ -433,8 +433,24 @@ async def oidc_token_exchange(
         db
     )
 
+    # --- Fetch and merge /userinfo claims ---
+    userinfo_endpoint = well_known_config.get("userinfo_endpoint")
+    if not userinfo_endpoint:
+        raise HTTPException(status_code=500, detail="Userinfo endpoint not found in .well-known config.")
     try:
-        app_user = await jit_provision_user(idp_config, user_claims, db_pg_session)
+        userinfo_headers = {"Authorization": f"Bearer {access_token}"}
+        userinfo_response = await http_client.get(userinfo_endpoint, headers=userinfo_headers)
+        userinfo_response.raise_for_status()
+        userinfo_claims = userinfo_response.json()
+    except Exception as e:
+        print(f"Failed to fetch userinfo: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch userinfo from IdP.")
+
+    # Merge userinfo_claims into user_claims (userinfo takes precedence)
+    merged_claims = {**user_claims, **userinfo_claims}
+
+    try:
+        app_user = await jit_provision_user(idp_config, merged_claims, db_pg_session)
     except HTTPException as e:
         if e.status_code == 409:
             return OIDCTokenExchangeResponse(status="email_conflict", message=e.detail, user_info=None)
