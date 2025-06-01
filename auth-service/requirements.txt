@@ -3,3 +3,6 @@ uvicorn[standard]
 pydantic
 python-dotenv
 psycopg2-binary
+httpx
+PyJWT
+google-cloud-firestore

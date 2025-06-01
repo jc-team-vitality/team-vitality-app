@@ -11,6 +11,11 @@ class Settings(BaseSettings):
     # KMS Key for encrypting/decrypting refresh tokens
     REFRESH_TOKEN_KMS_KEY_ID: Optional[str] = None
 
+    # Firestore settings
+    GCP_PROJECT_ID_FOR_FIRESTORE: Optional[str] = None # To be set in .env
+    FIRESTORE_OIDC_STATE_COLLECTION: str = "oidc_states"
+    OIDC_STATE_TTL_SECONDS: int = 900 # 15 minutes
+    BFF_OIDC_CALLBACK_URI: str = "YOUR_CONFIGURED_BFF_CALLBACK_URL_SINGLE_ENDPOINT"
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 settings = Settings()
