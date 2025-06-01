@@ -34,10 +34,12 @@ from .models import (
 )
 from .utils.kms_utils import encrypt_data_with_kms, decrypt_data_with_kms
 from google.cloud import kms_v1
-from .routers import idp_configs as idp_configs_router
+from .routers import idp_configs as idp_configs_router, oidc as oidc_router, internal as internal_router
 
 app = FastAPI(title=settings.PROJECT_NAME)
 
+app.include_router(oidc_router.router, prefix="/oidc", tags=["OIDC Authentication"])
+app.include_router(internal_router.router, prefix="/internal", tags=["Internal API"])
 app.include_router(
     idp_configs_router.router,
     prefix="/admin/identity-providers",
