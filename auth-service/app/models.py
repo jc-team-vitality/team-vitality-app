@@ -95,3 +95,16 @@ class InternalTokenRefreshResponse(BaseModel):
     expires_in: Optional[int] = None # Seconds until expiry
     token_type: str = "Bearer"
     scopes: Optional[str] = None # Scopes associated with the new access token
+
+from typing import List # Ensure List is imported if not already
+
+class IdentityProviderConfigUpdate(BaseModel):
+    name: Optional[str] = None
+    issuer_uri: Optional[HttpUrl] = None
+    well_known_uri: Optional[HttpUrl] = None
+    client_id: Optional[str] = None
+    client_secret_name: Optional[str] = None # Name of the secret in GCP Secret Manager
+    scopes: Optional[str] = None # Space-separated string
+    is_active: Optional[bool] = None
+    supports_refresh_token: Optional[bool] = None
+    # id, created_at, updated_at are typically not updatable directly via this DTO

@@ -34,8 +34,15 @@ from .models import (
 )
 from .utils.kms_utils import encrypt_data_with_kms, decrypt_data_with_kms
 from google.cloud import kms_v1
+from .routers import idp_configs as idp_configs_router
 
 app = FastAPI(title=settings.PROJECT_NAME)
+
+app.include_router(
+    idp_configs_router.router,
+    prefix="/admin/identity-providers",
+    tags=["Admin - Identity Provider Configurations"]
+)
 
 @app.get("/health", tags=["Health"])
 async def health_check():
