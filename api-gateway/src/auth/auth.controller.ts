@@ -1,8 +1,10 @@
-import { Controller, Get, Param, Res, Req, Query, UnauthorizedException, Post, InternalServerErrorException } from '@nestjs/common';
+import { Controller, Get, Param, Res, Req, Query, UnauthorizedException, Post, InternalServerErrorException, UseGuards } from '@nestjs/common';
 import { Response, Request } from 'express';
 import { AuthRelayService } from './auth-relay.service';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
+import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { SessionJwtPayload } from './strategies/jwt.strategy';
 
 @Controller('auth')
 export class AuthController {
@@ -109,5 +111,19 @@ export class AuthController {
       console.error('Error during logout:', error);
       throw new InternalServerErrorException('An error occurred during logout.');
     }
+  }
+
+  @Get('me')
+  @UseGuards(JwtAuthGuard)
+  async getProfile(@Req() req: Request) {
+    const user = req.user as SessionJwtPayload;
+    if (!user) {
+      throw new UnauthorizedException('No user found in session.');
+    }
+    return {
+      message: 'Successfully authenticated.',
+      userId: user.sub,
+      email: user.email,
+    };
   }
 }
