@@ -1,18 +1,40 @@
 import { Controller, Get, Param, Res, Req, Query, UnauthorizedException, Post, InternalServerErrorException, UseGuards } from '@nestjs/common';
 import { Response, Request } from 'express';
 import { AuthRelayService } from './auth-relay.service';
-import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { SessionJwtPayload } from './strategies/jwt.strategy';
+import { KmsJwtService } from './kms-jwt.service';
+
+// Module-level config key constants (shortened)
+const ERROR_REDIRECT = 'FRONTEND_ERROR_REDIRECT_URL';
+const LOGIN_SUCCESS_REDIRECT = 'FRONTEND_LOGIN_SUCCESS_REDIRECT_URL';
+const SESSION_MAX_AGE = 'JWT_SESSION_MAX_AGE_SECONDS';
+const ENV = 'NODE_ENV';
 
 @Controller('auth')
 export class AuthController {
   constructor(
     private readonly authRelayService: AuthRelayService,
-    private readonly jwtService: JwtService,
+    private readonly kmsJwtService: KmsJwtService,
     private readonly configService: ConfigService,
   ) {}
+
+  /**
+   * Helper to handle redirects for success and error cases in OIDC callback.
+   * @param res Express response
+   * @param configKey ConfigService key for the redirect URL
+   * @param errorCode Optional error code to append as ?code=...
+   * @param defaultUri Default URI if config is missing (default: '/')
+   */
+  private handleRedirect(res: Response, configKey: string, errorCode?: string, defaultUri: string = '/'): any {
+    const baseUri = this.configService.get<string>(configKey, defaultUri);
+    const url = new URL(baseUri, 'http://dummy-base');
+    if (errorCode) {
+      url.searchParams.set('code', errorCode);
+    }
+    return res.redirect(url.pathname + url.search);
+  }
 
   @Get('login/:providerName')
   async login(@Param('providerName') providerName: string, @Res() res: Response, @Req() req: Request) {
@@ -41,59 +63,39 @@ export class AuthController {
     const originalState = req.cookies['oidc_state'];
     res.clearCookie('oidc_state', {
       httpOnly: true,
-      secure: this.configService.get<string>('NODE_ENV') !== 'development',
+      secure: this.configService.get<string>(ENV) !== 'development',
       path: '/api/auth/oidc/callback',
       sameSite: 'lax',
     });
     if (!originalState || !stateFromIdp || originalState !== stateFromIdp) {
       console.error('OIDC state mismatch or missing state cookie. Potential CSRF.');
-      // Redirect to error URI with code=state_mismatch
-      const errorUri = this.configService.get<string>('FRONTEND_ERROR_REDIRECT_URL', '/login-error');
-      const url = new URL(errorUri, 'http://dummy-base');
-      url.searchParams.set('code', 'state_mismatch');
-      return res.redirect(url.pathname + url.search);
+      return this.handleRedirect(res, ERROR_REDIRECT, 'unexpected_error', '/');
     }
     if (!code) {
-      // Redirect to error URI with code=missing_code
-      const errorUri = this.configService.get<string>('FRONTEND_ERROR_REDIRECT_URL', '/login-error');
-      const url = new URL(errorUri, 'http://dummy-base');
-      url.searchParams.set('code', 'missing_code');
-      return res.redirect(url.pathname + url.search);
+      return this.handleRedirect(res, ERROR_REDIRECT, 'unexpected_error', '/');
     }
     try {
       const authServiceResponse = await this.authRelayService.exchangeCodeForToken(code, stateFromIdp);
       if (authServiceResponse.status === 'success' && authServiceResponse.user_info) {
         const appUser = authServiceResponse.user_info;
         const payload = { sub: appUser.id, email: appUser.email };
-        const sessionToken = await this.jwtService.signAsync(payload);
+        const sessionToken = await this.kmsJwtService.signKmsJwt(payload);
         res.cookie('session_token', sessionToken, {
           httpOnly: true,
-          secure: this.configService.get<string>('NODE_ENV') !== 'development',
-          maxAge: parseInt(this.configService.get<string>('JWT_SESSION_MAX_AGE_SECONDS', '2592000')) * 1000,
+          secure: this.configService.get<string>(ENV) !== 'development',
+          maxAge: parseInt(this.configService.get<string>(SESSION_MAX_AGE), 10) * 1000 || 2592000000,
           path: '/',
           sameSite: 'lax',
         });
-        return res.redirect(this.configService.get<string>('FRONTEND_LOGIN_SUCCESS_REDIRECT_URL', '/dashboard'));
+        return this.handleRedirect(res, LOGIN_SUCCESS_REDIRECT, undefined, '/');
       } else if (authServiceResponse.status === 'email_conflict') {
-        // Redirect to error URI with code=email_conflict
-        const errorUri = this.configService.get<string>('FRONTEND_ERROR_REDIRECT_URL', '/login-error');
-        const url = new URL(errorUri, 'http://dummy-base');
-        url.searchParams.set('code', 'email_conflict');
-        return res.redirect(url.pathname + url.search);
+        return this.handleRedirect(res, ERROR_REDIRECT, 'email_conflict', '/');
       } else {
-        // Redirect to error URI with code=auth_failed
-        const errorUri = this.configService.get<string>('FRONTEND_ERROR_REDIRECT_URL', '/login-error');
-        const url = new URL(errorUri, 'http://dummy-base');
-        url.searchParams.set('code', 'auth_failed');
-        return res.redirect(url.pathname + url.search);
+        return this.handleRedirect(res, ERROR_REDIRECT, 'auth_failed', '/');
       }
     } catch (error) {
       console.error('Error during OIDC callback processing:', error);
-      // Redirect to error URI with code=callback_processing_failed
-      const errorUri = this.configService.get<string>('FRONTEND_ERROR_REDIRECT_URL', '/login-error');
-      const url = new URL(errorUri, 'http://dummy-base');
-      url.searchParams.set('code', 'callback_processing_failed');
-      return res.redirect(url.pathname + url.search);
+      return this.handleRedirect(res, ERROR_REDIRECT, 'unexpected_error', '/');
     }
   }
 
@@ -102,7 +104,7 @@ export class AuthController {
     try {
       res.clearCookie('session_token', {
         httpOnly: true,
-        secure: this.configService.get<string>('NODE_ENV') !== 'development',
+        secure: this.configService.get<string>(ENV) !== 'development',
         path: '/',
         sameSite: 'lax',
       });
