@@ -149,15 +149,79 @@ async def jit_provision_user(idp_config: IdentityProviderConfig, user_claims: di
     )
 
 # Placeholder for ID Token Validation
-async def validate_id_token(id_token: str, idp_config: IdentityProviderConfig, well_known_config: dict, expected_nonce: str) -> dict:
-    print(f"JWT_VALIDATE_TODO: Implement robust ID token validation for token: {id_token[:20]}... and nonce: {expected_nonce}")
+async def validate_id_token(
+    id_token: str,
+    idp_config: IdentityProviderConfig,
+    well_known_config: dict,
+    expected_nonce: str,
+    http_client: httpx.AsyncClient
+) -> dict:
+    if not id_token:
+        raise HTTPException(status_code=400, detail="ID token is missing.")
+
+    jwks_uri = well_known_config.get("jwks_uri")
+    if not jwks_uri:
+        raise HTTPException(status_code=500, detail="JWKS URI not found in .well-known config.")
+
+    # TODO: JWKS_CACHE_TODO: Implement caching for JWKS keys to avoid fetching on every validation.
     try:
-        decoded_token = jwt.decode(id_token, options={"verify_signature": False, "verify_aud": False, "verify_exp": False})
+        jwks_response = await http_client.get(jwks_uri)
+        jwks_response.raise_for_status()
+        jwks = jwks_response.json()
+    except Exception as e:
+        print(f"Failed to fetch JWKS: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch JWKS from provider.")
+
+    try:
+        unverified_header = jwt.get_unverified_header(id_token)
+    except jwt.PyJWTError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid ID token header: {e}")
+
+    kid = unverified_header.get("kid")
+    if not kid:
+        raise HTTPException(status_code=400, detail="ID token header missing 'kid'.")
+
+    matching_key = None
+    for key_data in jwks.get("keys", []):
+        if key_data.get("kid") == kid:
+            matching_key = key_data
+            break
+
+    if not matching_key:
+        raise HTTPException(status_code=400, detail="No matching JWK found for token 'kid'.")
+
+    try:
+        # Construct the public key from the JWK
+        public_key = jwt.algorithms.RSAAlgorithm.from_jwk(matching_key)
+
+        # Decode and verify the token
+        decoded_token = jwt.decode(
+            id_token,
+            public_key,
+            algorithms=[unverified_header.get("alg", "RS256")],
+            audience=idp_config.client_id,
+            issuer=idp_config.issuer_uri
+        )
+
+        # Verify nonce
         if decoded_token.get("nonce") != expected_nonce:
             raise HTTPException(status_code=400, detail="ID token nonce mismatch.")
+
         return decoded_token
+
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="ID token has expired.")
+    except jwt.InvalidAudienceError:
+        raise HTTPException(status_code=401, detail="Invalid ID token audience.")
+    except jwt.InvalidIssuerError:
+        raise HTTPException(status_code=401, detail="Invalid ID token issuer.")
+    except jwt.InvalidSignatureError:
+        raise HTTPException(status_code=401, detail="Invalid ID token signature.")
+    except jwt.PyJWTError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid ID token: {e}")
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Invalid ID token: {str(e)}")
+        print(f"Unexpected error during token validation: {e}")
+        raise HTTPException(status_code=500, detail="Token validation failed due to an unexpected error.")
 
 @app.post("/oidc/initiate-login/{provider_name}", response_model=OIDCInitiateLoginResponse, tags=["OIDC Authentication"])
 async def initiate_oidc_login(
@@ -256,7 +320,14 @@ async def oidc_token_exchange(
     if not id_token:
         raise HTTPException(status_code=500, detail="ID token not found in token response.")
 
-    user_claims = await validate_id_token(id_token, idp_config, well_known_config, expected_nonce)
+    # Call the updated validate_id_token function with http_client
+    user_claims = await validate_id_token(
+        id_token,
+        idp_config,
+        well_known_config,
+        expected_nonce,
+        http_client
+    )
 
     try:
         app_user = await jit_provision_user(idp_config, user_claims)
