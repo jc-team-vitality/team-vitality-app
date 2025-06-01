@@ -9,7 +9,7 @@ import hashlib
 import base64
 from urllib.parse import urlencode
 
-from app.models import OIDCInitiateLoginResponse, OIDCTokenExchangeRequest, OIDCTokenExchangeResponse
+from app.models import OIDCInitiateLoginResponse, OIDCTokenExchangeRequest, OIDCTokenExchangeResponse, OIDCInitiateLinkAccountRequest
 from app.core.config import settings
 from app.db_clients import get_firestore_db, get_secret_manager_client, get_async_db_session, get_kms_client
 from app.services.oidc_service import (
@@ -19,7 +19,8 @@ from app.services.oidc_service import (
     fetch_idp_well_known_config_impl,
     validate_id_token,
     jit_provision_user,
-    fetch_gcp_secret
+    fetch_gcp_secret,
+    process_account_link
 )
 
 router = APIRouter()
@@ -50,7 +51,15 @@ async def initiate_oidc_login(
     code_challenge = base64.urlsafe_b64encode(code_challenge_hash).decode('utf-8').rstrip('=')
 
     # --- Cache the OIDC state for later validation ---
-    await cache_oidc_state(state, nonce, code_verifier, provider_name, db)
+    await cache_oidc_state(
+        state, 
+        nonce, 
+        code_verifier, 
+        provider_name, 
+        db, # Firestore client
+        flow_type="login", # Explicitly set flow_type
+        linking_app_user_id=None
+    )
 
     # --- Fetch the authorization endpoint from the provider's .well-known config ---
     well_known_config = await fetch_idp_well_known_config_impl(idp_config.well_known_uri, db)
@@ -99,6 +108,8 @@ async def oidc_token_exchange(
     provider_name = cached_state_data["provider_name"]
     expected_nonce = cached_state_data["nonce"]
     pkce_code_verifier = cached_state_data["pkce_code_verifier"]
+    flow_type = cached_state_data.get("flow_type", "login")
+    linking_app_user_id_str = cached_state_data.get("linking_app_user_id")
 
     # --- Retrieve IdP configuration and .well-known endpoints ---
     idp_config = await get_identity_provider_config_from_db(provider_name, db_pg_session)
@@ -171,19 +182,46 @@ async def oidc_token_exchange(
     # --- Merge claims from ID token and userinfo endpoint ---
     merged_claims = {**user_claims, **userinfo_claims}
 
-    # --- Provision the user in the application database ---
-    try:
-        app_user = await jit_provision_user(idp_config, merged_claims, db_pg_session)
-    except HTTPException as e:
-        if e.status_code == 409:
-            return OIDCTokenExchangeResponse(status="email_conflict", message=e.detail, user_info=None)
-        raise e
+    final_app_user = None
+    response_message = ""
+
+    if flow_type == "link_account":
+        if not linking_app_user_id_str:
+            raise HTTPException(status_code=400, detail="Invalid state: linking_app_user_id missing for account linking flow.")
+        from uuid import UUID
+        current_app_user_id = UUID(str(linking_app_user_id_str))
+        try:
+            await process_account_link(idp_config, merged_claims, current_app_user_id, db_pg_session)
+            # Fetch the app_user to return in response
+            from sqlalchemy.sql import text as sql_text
+            user_query = sql_text("SELECT id, email, first_name, last_name, created_at, updated_at FROM app_users WHERE id = :user_id")
+            result = await db_pg_session.execute(user_query, {"user_id": current_app_user_id})
+            user_row = result.fetchone()
+            if user_row:
+                from app.models import AppUser
+                final_app_user = AppUser.model_validate(dict(user_row._mapping))
+            response_message = "Account linked successfully."
+        except HTTPException as e:
+            raise e
+    elif flow_type == "login":
+        try:
+            final_app_user = await jit_provision_user(idp_config, merged_claims, db_pg_session)
+            response_message = "User authenticated successfully."
+        except HTTPException as e:
+            if e.status_code == 409:
+                return OIDCTokenExchangeResponse(status="email_conflict", message=e.detail, user_info=None)
+            raise e
+    else:
+        raise HTTPException(status_code=500, detail="Unknown flow type in OIDC state.")
 
     # --- Encrypt and store refresh token if present and supported ---
-    if refresh_token and idp_config.supports_refresh_token:
-        if settings.REFRESH_TOKEN_KMS_KEY_ID:
-            from app.utils.kms_utils import encrypt_data_with_kms
+    if final_app_user and refresh_token and idp_config.supports_refresh_token:
+        print(f"Attempting to encrypt and store refresh token for user {final_app_user.id}, provider {idp_config.name}, flow {flow_type}")
+        if not settings.REFRESH_TOKEN_KMS_KEY_ID:
+            print("WARNING: REFRESH_TOKEN_KMS_KEY_ID not set. Cannot encrypt refresh token.")
+        else:
             try:
+                from app.utils.kms_utils import encrypt_data_with_kms
                 encrypted_rt_bytes = await encrypt_data_with_kms(
                     kms_client=kms_client,
                     kms_key_id=settings.REFRESH_TOKEN_KMS_KEY_ID,
@@ -193,22 +231,97 @@ async def oidc_token_exchange(
                 update_link_query = sql_text("""
                     UPDATE user_provider_links
                     SET encrypted_refresh_token = :encrypted_refresh_token, updated_at = NOW()
-                    WHERE user_id = :user_id AND provider_id = :provider_id
+                    WHERE user_id = :user_id AND provider_id = :provider_id AND provider_user_id = :provider_user_id_claim
                 """)
+                provider_user_id_claim = merged_claims.get("sub")
                 await db_pg_session.execute(
                     update_link_query,
                     {
                         "encrypted_refresh_token": encrypted_rt_bytes,
-                        "user_id": app_user.id,
-                        "provider_id": idp_config.id
+                        "user_id": final_app_user.id,
+                        "provider_id": idp_config.id,
+                        "provider_user_id_claim": provider_user_id_claim
                     }
                 )
-            except Exception:
-                pass
+                print(f"Encrypted refresh token stored for user {final_app_user.id}, provider {idp_config.name}")
+            except Exception as e:
+                print(f"ERROR: Failed to encrypt and store refresh token during {flow_type} flow: {e}")
 
-    # --- Return the authentication result and user info ---
-    return OIDCTokenExchangeResponse(
-        status="success",
-        message="User authenticated successfully.",
-        user_info=app_user
+    if final_app_user:
+        return OIDCTokenExchangeResponse(
+            status="success",
+            message=response_message,
+            user_info=final_app_user
+        )
+    else:
+        raise HTTPException(status_code=500, detail="User processing failed after OIDC exchange.")
+
+@router.post(
+    "/link-account/initiate/{provider_name}",
+    response_model=OIDCInitiateLoginResponse, # Same response as normal login init
+    summary="Initiate OIDC flow to link an external IdP to an existing authenticated user account",
+    tags=["OIDC Authentication", "Account Linking"]
+)
+async def initiate_oidc_link_account(
+    provider_name: str = Path(..., description="The common name of the identity provider to link (e.g., 'google')"),
+    link_request: OIDCInitiateLinkAccountRequest = Body(...),
+    db: firestore_v1.AsyncClient = Depends(get_firestore_db),
+    db_pg_session: AsyncSession = Depends(get_async_db_session)
+):
+    """
+    Initiates the OIDC account linking flow for an authenticated user.
+
+    This endpoint generates the necessary OIDC state, nonce, and PKCE code challenge, caches them,
+    and constructs the authorization URL for the client to redirect the user to the IdP's login page.
+    The flow_type is set to 'link_account' to indicate this is an account linking operation.
+    """
+    # 1. TODO: Validate app_user_id exists in app_users table? For now, trust the BFF.
+    print(f"Initiating account link for app_user_id: {link_request.app_user_id} with provider: {provider_name}")
+
+    # --- Retrieve and validate the IdP configuration ---
+    idp_config = await get_identity_provider_config_from_db(provider_name, db_pg_session)
+    if not idp_config or not idp_config.is_active:
+        raise HTTPException(status_code=404, detail=f"Provider '{provider_name}' not found or not active for linking.")
+
+    # --- Generate OIDC state, nonce, and PKCE code challenge ---
+    state = secrets.token_urlsafe(32)
+    nonce = secrets.token_urlsafe(32)
+    code_verifier = secrets.token_urlsafe(64)
+    code_challenge_hash = hashlib.sha256(code_verifier.encode('utf-8')).digest()
+    code_challenge = base64.urlsafe_b64encode(code_challenge_hash).decode('utf-8').rstrip('=')
+
+    # --- Cache the OIDC state for later validation ---
+    await cache_oidc_state(
+        state=state,
+        nonce=nonce,
+        pkce_code_verifier=code_verifier,
+        provider_name=provider_name,
+        db=db, # Firestore client
+        flow_type="link_account", # Specify flow type
+        linking_app_user_id=link_request.app_user_id # Pass the current user's ID
     )
+
+    # --- Fetch the authorization endpoint from the provider's .well-known config ---
+    well_known_config = await fetch_idp_well_known_config_impl(idp_config.well_known_uri, db)
+    authorization_endpoint = well_known_config.get("authorization_endpoint")
+    if not authorization_endpoint:
+        raise HTTPException(status_code=500, detail=f"Could not retrieve authorization endpoint for provider '{provider_name}'.")
+
+    # --- Build the authorization URL for the IdP ---
+    bff_callback_uri = settings.BFF_OIDC_CALLBACK_URI
+    params = {
+        "client_id": idp_config.client_id,
+        "response_type": "code",
+        "scope": idp_config.scopes, # Consider if different scopes are needed for linking
+        "redirect_uri": bff_callback_uri,
+        "state": state,
+        "nonce": nonce,
+        "code_challenge": code_challenge,
+        "code_challenge_method": "S256",
+        # Optionally: "prompt": "consent" or "select_account" for linking
+    }
+    query_string = urlencode(params)
+    authorization_url = f"{authorization_endpoint}?{query_string}"
+
+    # --- Return the authorization URL and state to the client ---
+    return OIDCInitiateLoginResponse(authorization_url=authorization_url, state=state)

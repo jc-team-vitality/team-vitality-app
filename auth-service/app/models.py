@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr, HttpUrl
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Literal  # Add Literal
 from uuid import UUID
 from datetime import datetime
 
@@ -76,6 +76,9 @@ class OIDCStateCache(BaseModel):
     pkce_code_verifier: str
     provider_name: str
     expires_at: datetime  # For Firestore TTL policy
+    # New fields for account linking
+    flow_type: Literal["login", "link_account"] = "login"  # Default to "login"
+    linking_app_user_id: Optional[UUID] = None  # ID of the existing app_user initiating the link
 
 class OIDCWellKnownCache(BaseModel):
     config_data: Dict[str, Any] # Stores the JSON content of the .well-known document
@@ -108,3 +111,6 @@ class IdentityProviderConfigUpdate(BaseModel):
     is_active: Optional[bool] = None
     supports_refresh_token: Optional[bool] = None
     # id, created_at, updated_at are typically not updatable directly via this DTO
+
+class OIDCInitiateLinkAccountRequest(BaseModel):
+    app_user_id: UUID  # The ID of the currently authenticated application user

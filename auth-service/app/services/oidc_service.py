@@ -10,7 +10,8 @@ from google.cloud import kms_v1
 from pydantic import HttpUrl
 from fastapi import HTTPException
 import httpx
-from typing import Optional
+from typing import Optional, Literal  # Add Literal
+from uuid import UUID
 from datetime import datetime, timezone, timedelta
 import jwt
 
@@ -42,7 +43,9 @@ async def cache_oidc_state(
     nonce: str,
     pkce_code_verifier: str,
     provider_name: str,
-    db: firestore_v1.AsyncClient
+    db: firestore_v1.AsyncClient,
+    flow_type: Literal["login", "link_account"] = "login",
+    linking_app_user_id: Optional[UUID] = None
 ):
     expires_at_dt = datetime.now(timezone.utc) + timedelta(seconds=settings.OIDC_STATE_TTL_SECONDS)
     state_data = OIDCStateCache(
@@ -50,11 +53,13 @@ async def cache_oidc_state(
         nonce=nonce,
         pkce_code_verifier=pkce_code_verifier,
         provider_name=provider_name,
-        expires_at=expires_at_dt
+        expires_at=expires_at_dt,
+        flow_type=flow_type,  # Store new field
+        linking_app_user_id=linking_app_user_id  # Store new field
     )
     doc_ref = db.collection(settings.FIRESTORE_OIDC_STATE_COLLECTION).document(state)
     await doc_ref.set(state_data.model_dump())
-    print(f"OIDC state cached in Firestore for state: {state}")
+    print(f"OIDC state cached in Firestore for state: {state}, flow_type: {flow_type}")
 
 # --- Service: Get Cached OIDC State ---
 async def get_cached_oidc_state(
@@ -291,3 +296,55 @@ async def fetch_gcp_secret(
 
 # --- Service: Decrypt data with KMS (imported for internal_router) ---
 from app.utils.kms_utils import decrypt_data_with_kms
+
+async def process_account_link(
+    idp_config: IdentityProviderConfig,
+    new_idp_user_claims: dict,
+    existing_app_user_id: UUID,
+    db_session: AsyncSession
+) -> bool:
+    provider_user_id = new_idp_user_claims.get("sub")
+    if not provider_user_id:
+        raise HTTPException(status_code=400, detail="Missing 'sub' claim from the new IdP token, cannot link account.")
+
+    # Check if this external IdP account is already linked to any user
+    existing_link_query = text("""
+        SELECT user_id FROM user_provider_links
+        WHERE provider_id = :provider_id AND provider_user_id = :provider_user_id
+    """)
+    result = await db_session.execute(
+        existing_link_query,
+        {"provider_id": idp_config.id, "provider_user_id": provider_user_id}
+    )
+    link_row = result.fetchone()
+
+    if link_row:
+        if link_row.user_id == existing_app_user_id:
+            print(f"Account linking: IdP {idp_config.name} account {provider_user_id} already linked to user {existing_app_user_id}.")
+            return True # Already linked to the correct user
+        else:
+            # This external account is linked to a different app user. This is a conflict.
+            raise HTTPException(
+                status_code=409, # Conflict
+                detail="This external identity is already linked to a different application account."
+            )
+    # No existing link for this external IdP account, proceed to create a new link
+    print(f"Creating new provider link for user {existing_app_user_id} with provider {idp_config.name} (IdP sub: {provider_user_id}).")
+    new_link_query = text("""
+        INSERT INTO user_provider_links (user_id, provider_id, provider_user_id, encrypted_refresh_token)
+        VALUES (:user_id, :provider_id, :provider_user_id, NULL)
+        RETURNING id
+    """)
+    try:
+        await db_session.execute(
+            new_link_query,
+            {
+                "user_id": existing_app_user_id,
+                "provider_id": idp_config.id,
+                "provider_user_id": provider_user_id
+            }
+        )
+        return True
+    except Exception as e:
+        print(f"Database error during account link creation: {e}")
+        raise HTTPException(status_code=500, detail="Failed to link new provider account due to a database error.")
