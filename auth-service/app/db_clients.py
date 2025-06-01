@@ -1,6 +1,10 @@
 from google.cloud import firestore_v1
 from app.core.config import settings
 from google.cloud import secretmanager_v1
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.sql import text
+from typing import AsyncGenerator
 
 # Initialize Firestore client
 # This will use Application Default Credentials when deployed on GCP (e.g., Cloud Run)
@@ -30,3 +34,28 @@ async def get_secret_manager_client():
     if secret_manager_client is None:
         raise RuntimeError("Secret Manager client not initialized. Check GCP_PROJECT_ID setting.")
     return secret_manager_client
+
+async_engine = None
+AsyncSessionLocal = None
+
+if settings.DATABASE_URL:
+    async_engine = create_async_engine(settings.DATABASE_URL, echo=False)
+    AsyncSessionLocal = sessionmaker(
+        bind=async_engine, class_=AsyncSession, expire_on_commit=False
+    )
+else:
+    print("WARNING: DATABASE_URL not set. SQLAlchemy async engine not initialized.")
+
+# Dependency for FastAPI to get an async SQLAlchemy session
+async def get_async_db_session() -> AsyncGenerator[AsyncSession, None]:
+    if AsyncSessionLocal is None:
+        raise RuntimeError("Database not configured. AsyncSessionLocal is None.")
+    async with AsyncSessionLocal() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+        finally:
+            await session.close()

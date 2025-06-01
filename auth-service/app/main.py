@@ -14,10 +14,12 @@ import jwt
 from google.cloud import firestore_v1
 from google.cloud import secretmanager_v1
 from pydantic import HttpUrl # Ensure HttpUrl is imported for function signature
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql import text
 
 # Local application imports
 from .core.config import settings
-from .db_clients import get_firestore_db, get_secret_manager_client
+from .db_clients import get_firestore_db, get_secret_manager_client, get_async_db_session
 from .models import (
     IdentityProviderConfig,
     OIDCInitiateLoginResponse,
@@ -179,17 +181,70 @@ async def fetch_and_cache_jwks(
     return jwks_keys_list
 
 # Placeholder for JIT User Provisioning and linking
-async def jit_provision_user(idp_config: IdentityProviderConfig, user_claims: dict) -> AppUser:
-    print(f"JIT_DB_TODO: Implement JIT provisioning for user claims: {user_claims} from provider: {idp_config.name}")
-    simulated_user_id = UUID('d9c09db0-045e-4b6f-8f8d-0761974649c3')
-    return AppUser(
-        id=simulated_user_id,
-        email=user_claims.get("email", "test@example.com"),
-        first_name=user_claims.get("given_name"),
-        last_name=user_claims.get("family_name"),
-        created_at=datetime.now(timezone.utc),
-        updated_at=datetime.now(timezone.utc)
+async def jit_provision_user(
+    idp_config: IdentityProviderConfig,
+    user_claims: dict,
+    db_session: AsyncSession = Depends(get_async_db_session)
+) -> AppUser:
+    provider_user_id = user_claims.get("sub")
+    email = user_claims.get("email")
+    first_name = user_claims.get("given_name")
+    last_name = user_claims.get("family_name")
+
+    if not provider_user_id or not email:
+        raise HTTPException(status_code=400, detail="Missing required user claims (sub or email) from IdP.")
+
+    # 1. Check for existing UserProviderLink
+    link_query = text("""
+        SELECT ul.user_id, u.email, u.first_name, u.last_name, u.id, u.created_at, u.updated_at
+        FROM user_provider_links ul
+        JOIN app_users u ON ul.user_id = u.id
+        WHERE ul.provider_id = :provider_id AND ul.provider_user_id = :provider_user_id
+    """)
+    result = await db_session.execute(link_query, {"provider_id": idp_config.id, "provider_user_id": provider_user_id})
+    existing_linked_user_row = result.fetchone()
+
+    if existing_linked_user_row:
+        # User found via existing link, convert row to AppUser Pydantic model
+        return AppUser.model_validate(dict(existing_linked_user_row._mapping))
+
+    # 2. No link found, check for existing AppUser by email
+    email_query = text("SELECT id, email, first_name, last_name, created_at, updated_at FROM app_users WHERE email = :email")
+    result = await db_session.execute(email_query, {"email": email})
+    existing_email_user_row = result.fetchone()
+
+    if existing_email_user_row:
+        # Email conflict: User with this email exists but is not linked to this IdP account.
+        raise HTTPException(
+            status_code=409,
+            detail="An account with this email already exists. Please log in using your original method and link this provider from your account settings."
+        )
+
+    # 3. No existing link AND no email conflict: Create new AppUser and UserProviderLink
+    new_user_query = text("""
+        INSERT INTO app_users (email, first_name, last_name)
+        VALUES (:email, :first_name, :last_name)
+        RETURNING id, email, first_name, last_name, created_at, updated_at
+    """)
+    result = await db_session.execute(
+        new_user_query,
+        {"email": email, "first_name": first_name, "last_name": last_name}
     )
+    new_user_row = result.fetchone()
+    if not new_user_row:
+        raise HTTPException(status_code=500, detail="Failed to create new user record.")
+    new_app_user_id = new_user_row.id
+
+    new_link_query = text("""
+        INSERT INTO user_provider_links (user_id, provider_id, provider_user_id)
+        VALUES (:user_id, :provider_id, :provider_user_id)
+    """)
+    await db_session.execute(
+        new_link_query,
+        {"user_id": new_app_user_id, "provider_id": idp_config.id, "provider_user_id": provider_user_id}
+    )
+
+    return AppUser.model_validate(dict(new_user_row._mapping))
 
 # Placeholder for ID Token Validation
 async def validate_id_token(
@@ -297,7 +352,8 @@ async def oidc_token_exchange(
     request_data: OIDCTokenExchangeRequest = Body(...),
     db: firestore_v1.AsyncClient = Depends(get_firestore_db),
     http_client: httpx.AsyncClient = Depends(get_http_client),
-    sm_client: secretmanager_v1.SecretManagerServiceClient = Depends(get_secret_manager_client) # Inject Secret Manager client
+    sm_client: secretmanager_v1.SecretManagerServiceClient = Depends(get_secret_manager_client),
+    db_pg_session: AsyncSession = Depends(get_async_db_session)
 ):
     cached_state_data = await get_cached_oidc_state(request_data.state, db)
     if not cached_state_data:
@@ -365,7 +421,7 @@ async def oidc_token_exchange(
     )
 
     try:
-        app_user = await jit_provision_user(idp_config, user_claims)
+        app_user = await jit_provision_user(idp_config, user_claims, db_pg_session)
     except HTTPException as e:
         if e.status_code == 409:
             return OIDCTokenExchangeResponse(status="email_conflict", message=e.detail, user_info=None)

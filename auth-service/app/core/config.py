@@ -5,7 +5,7 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "TeamVitality Auth Service"
     API_V1_STR: str = "/api/v1"
 
-    # Database configuration (placeholders, to be loaded from environment variables)
+    # Database configuration (must be loaded from environment variables or .env)
     DATABASE_URL: Optional[str] = None
     
     # KMS Key for encrypting/decrypting refresh tokens
