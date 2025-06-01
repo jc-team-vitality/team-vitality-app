@@ -4,6 +4,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import HttpUrl
 import httpx
 from google.cloud import kms_v1
+import secrets
+import hashlib
+import base64
+from urllib.parse import urlencode
 
 from app.models import OIDCInitiateLoginResponse, OIDCTokenExchangeRequest, OIDCTokenExchangeResponse
 from app.core.config import settings
@@ -31,6 +35,7 @@ async def initiate_oidc_login(
 
     This endpoint generates the necessary OIDC state, nonce, and PKCE code challenge, caches them,
     and constructs the authorization URL for the client to redirect the user to the IdP's login page.
+    Now uses the authorization endpoint from the provider's .well-known config.
     """
     # --- Retrieve and validate the IdP configuration ---
     idp_config = await get_identity_provider_config_from_db(provider_name, db_pg_session)
@@ -38,7 +43,6 @@ async def initiate_oidc_login(
         raise HTTPException(status_code=404, detail=f"Provider '{provider_name}' not found or not active.")
 
     # --- Generate OIDC state, nonce, and PKCE code challenge ---
-    import secrets, hashlib, base64
     state = secrets.token_urlsafe(32)
     nonce = secrets.token_urlsafe(32)
     code_verifier = secrets.token_urlsafe(64)
@@ -48,16 +52,14 @@ async def initiate_oidc_login(
     # --- Cache the OIDC state for later validation ---
     await cache_oidc_state(state, nonce, code_verifier, provider_name, db)
 
+    # --- Fetch the authorization endpoint from the provider's .well-known config ---
+    well_known_config = await fetch_idp_well_known_config_impl(idp_config.well_known_uri, db)
+    authorization_endpoint = well_known_config.get("authorization_endpoint")
+    if not authorization_endpoint:
+        raise HTTPException(status_code=500, detail=f"Could not retrieve authorization endpoint for provider '{provider_name}'.")
+
     # --- Build the authorization URL for the IdP ---
     bff_callback_uri = settings.BFF_OIDC_CALLBACK_URI
-    authorization_endpoint_base = str(idp_config.issuer_uri)
-    if provider_name == "google":
-        # Google uses a fixed authorization endpoint
-        actual_authorization_endpoint = "https://accounts.google.com/o/oauth2/v2/auth"
-    else:
-        from urllib.parse import urljoin
-        actual_authorization_endpoint = urljoin(authorization_endpoint_base, "authorize")
-    from urllib.parse import urlencode
     params = {
         "client_id": idp_config.client_id,
         "response_type": "code",
@@ -69,7 +71,7 @@ async def initiate_oidc_login(
         "code_challenge_method": "S256"
     }
     query_string = urlencode(params)
-    authorization_url = f"{actual_authorization_endpoint}?{query_string}"
+    authorization_url = f"{authorization_endpoint}?{query_string}"
 
     # --- Return the authorization URL and state to the client ---
     return OIDCInitiateLoginResponse(authorization_url=authorization_url, state=state)

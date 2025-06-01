@@ -3,13 +3,14 @@ from google.cloud import firestore_v1, secretmanager_v1
 from sqlalchemy.ext.asyncio import AsyncSession
 import httpx
 from google.cloud import kms_v1
+from sqlalchemy.sql import text as sql_text
 
 from app.models import InternalTokenRefreshRequest, InternalTokenRefreshResponse
 from app.db_clients import get_async_db_session, get_firestore_db, get_secret_manager_client, get_kms_client, AsyncSessionLocal
 from app.services.oidc_service import get_identity_provider_config_from_db, fetch_gcp_secret
 from app.services.oidc_service import decrypt_data_with_kms, fetch_idp_well_known_config_impl
-from sqlalchemy.sql import text as sql_text
 from app.utils.kms_utils import encrypt_data_with_kms
+from app.core.config import settings
 
 router = APIRouter()
 
@@ -59,7 +60,6 @@ async def internal_refresh_access_token(
         raise HTTPException(status_code=500, detail=f"Failed to retrieve client secret for provider '{request_data.provider_name}'.")
 
     # --- Decrypt the stored refresh token using KMS ---
-    from app.core.config import settings
     if not settings.REFRESH_TOKEN_KMS_KEY_ID:
         raise HTTPException(status_code=500, detail="Refresh token KMS key not configured.")
     try:
