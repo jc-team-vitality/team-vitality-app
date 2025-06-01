@@ -67,27 +67,6 @@ async def get_identity_provider_config_from_db(
         print(f"Database error fetching IdP config for '{provider_name}': {e}")
         return None
 
-# Placeholder for actual DB lookup for IdentityProviderConfig
-async def get_identity_provider_config_from_db(provider_name: str) -> Optional[IdentityProviderConfig]:
-    # In a real implementation, this would query the PostgreSQL 'identity_providers' table.
-    # For now, simulate for a known provider, e.g., 'google'.
-    if provider_name == "google":
-        # These values would come from the DB based on 'provider_name'
-        return IdentityProviderConfig(
-            id="some-uuid", # Placeholder
-            created_at=datetime.now(timezone.utc), # Placeholder
-            updated_at=datetime.now(timezone.utc), # Placeholder
-            name="google",
-            issuer_uri="https://accounts.google.com", # Example, actual from DB
-            well_known_uri="https://accounts.google.com/.well-known/openid-configuration", # Example, actual from DB
-            client_id="YOUR_GOOGLE_CLIENT_ID_FROM_DB_CONFIG", # Example, actual from DB
-            client_secret_name="google-client-secret-name", # Example, actual from DB
-            scopes="openid email profile", # Example, actual from DB
-            is_active=True,
-            supports_refresh_token=True
-        )
-    return None
-
 # --- Updated cache_oidc_state function (used by initiate_oidc_login) ---
 async def cache_oidc_state(
     state: str,
@@ -540,8 +519,8 @@ async def internal_refresh_access_token(
     sm_client: secretmanager_v1.SecretManagerServiceClient = Depends(get_secret_manager_client),
     kms_client: kms_v1.KeyManagementServiceClient = Depends(get_kms_client)
 ):
-    # 1. Fetch IdP Configuration (still simulated)
-    idp_config = await get_identity_provider_config_from_db(request_data.provider_name)
+    # 1. Fetch IdP Configuration (now from DB)
+    idp_config = await get_identity_provider_config_from_db(request_data.provider_name, db_pg_session)
     if not idp_config or not idp_config.is_active:
         raise HTTPException(status_code=404, detail=f"Provider '{request_data.provider_name}' not found or not active.")
     
