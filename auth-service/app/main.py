@@ -12,18 +12,20 @@ from fastapi import FastAPI, HTTPException, Path, Depends, Body
 import httpx
 import jwt
 from google.cloud import firestore_v1
+from google.cloud import secretmanager_v1
 from pydantic.networks import HttpUrl
 
 # Local application imports
 from .core.config import settings
-from .db_clients import get_firestore_db
+from .db_clients import get_firestore_db, get_secret_manager_client
 from .models import (
     IdentityProviderConfig,
     OIDCInitiateLoginResponse,
     OIDCTokenExchangeRequest,
     OIDCTokenExchangeResponse,
     AppUser,
-    OIDCStateCache
+    OIDCStateCache,
+    OIDCWellKnownCache
 )
 
 app = FastAPI(title=settings.PROJECT_NAME)
@@ -31,6 +33,10 @@ app = FastAPI(title=settings.PROJECT_NAME)
 @app.get("/health", tags=["Health"])
 async def health_check():
     return {"status": "healthy", "project_name": settings.PROJECT_NAME}
+
+# Dependency for httpx.AsyncClient
+async def get_http_client() -> httpx.AsyncClient:
+    return httpx.AsyncClient()
 
 # Placeholder for actual DB lookup for IdentityProviderConfig
 async def get_identity_provider_config_from_db(provider_name: str) -> Optional[IdentityProviderConfig]:
@@ -93,18 +99,41 @@ async def get_cached_oidc_state(
         print(f"OIDC state not found or already used/expired for state: {state}")
         return None
 
-# Placeholder for fetching IdP .well-known configuration
-async def fetch_idp_well_known_config(well_known_uri: HttpUrl) -> Optional[dict]:
-    print(f"HTTP_TODO: Fetch .well-known config from: {well_known_uri}")
-    if "accounts.google.com" in str(well_known_uri):
-        return {
-            "issuer": "https://accounts.google.com",
-            "authorization_endpoint": "https://accounts.google.com/o/oauth2/v2/auth",
-            "token_endpoint": "https://oauth2.googleapis.com/token",
-            "userinfo_endpoint": "https://openidconnect.googleapis.com/v1/userinfo",
-            "jwks_uri": "https://www.googleapis.com/oauth2/v3/certs",
-        }
-    return None
+# --- Firestore-cached OIDC .well-known config fetch ---
+async def fetch_idp_well_known_config_impl(
+    well_known_uri: HttpUrl,
+    db: firestore_v1.AsyncClient,
+    http_client: httpx.AsyncClient
+) -> Optional[dict]:
+    cache_key = str(well_known_uri).replace("://", "_").replace("/", "_").replace(".", "_").replace(":", "_")
+    doc_ref = db.collection(settings.FIRESTORE_WELL_KNOWN_CONFIGS_COLLECTION).document(cache_key)
+    doc_snapshot = await doc_ref.get()
+    if doc_snapshot.exists:
+        try:
+            cached_config = OIDCWellKnownCache.model_validate(doc_snapshot.to_dict())
+            if cached_config.expires_at > datetime.now(timezone.utc):
+                print(f"Found valid .well-known config in cache for: {well_known_uri}")
+                return cached_config.config_data
+            else:
+                print(f"Cached .well-known config expired for: {well_known_uri}")
+        except Exception as e:
+            print(f"Error validating cached .well-known config: {e}. Fetching anew.")
+    print(f"Fetching .well-known config from: {well_known_uri}")
+    try:
+        response = await http_client.get(str(well_known_uri))
+        response.raise_for_status()
+        fetched_config_data = response.json()
+    except httpx.HTTPStatusError as e:
+        print(f"HTTP error fetching .well-known config from {well_known_uri}: {e}")
+        raise HTTPException(status_code=e.response.status_code, detail=f"Failed to fetch OIDC discovery document: {e.response.text}")
+    except Exception as e:
+        print(f"Error fetching or parsing .well-known config from {well_known_uri}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to process OIDC discovery document.")
+    expires_at_dt = datetime.now(timezone.utc) + timedelta(seconds=settings.WELL_KNOWN_CONFIG_CACHE_TTL_SECONDS)
+    new_cached_config = OIDCWellKnownCache(config_data=fetched_config_data, expires_at=expires_at_dt)
+    await doc_ref.set(new_cached_config.model_dump())
+    print(f"Cached new .well-known config for: {well_known_uri}")
+    return fetched_config_data
 
 # Placeholder for JIT User Provisioning and linking
 async def jit_provision_user(idp_config: IdentityProviderConfig, user_claims: dict) -> AppUser:
@@ -167,7 +196,9 @@ async def initiate_oidc_login(
 @app.post("/oidc/token/exchange", response_model=OIDCTokenExchangeResponse, tags=["OIDC Authentication"])
 async def oidc_token_exchange(
     request_data: OIDCTokenExchangeRequest = Body(...),
-    db: firestore_v1.AsyncClient = Depends(get_firestore_db)
+    db: firestore_v1.AsyncClient = Depends(get_firestore_db),
+    http_client: httpx.AsyncClient = Depends(get_http_client),
+    sm_client: secretmanager_v1.SecretManagerServiceClient = Depends(get_secret_manager_client) # Inject Secret Manager client
 ):
     cached_state_data = await get_cached_oidc_state(request_data.state, db)
     if not cached_state_data:
@@ -181,13 +212,22 @@ async def oidc_token_exchange(
     if not idp_config:
         raise HTTPException(status_code=500, detail=f"Configuration for provider '{provider_name}' not found unexpectedly.")
 
-    well_known_config = await fetch_idp_well_known_config(idp_config.well_known_uri)
+    well_known_config = await fetch_idp_well_known_config_impl(idp_config.well_known_uri, db, http_client)
     if not well_known_config or not well_known_config.get("token_endpoint"):
         raise HTTPException(status_code=500, detail=f"Could not retrieve token endpoint for provider '{provider_name}'.")
 
     token_endpoint = well_known_config["token_endpoint"]
-    client_secret_value = "FETCH_FROM_GCP_SECRET_MANAGER_USING_idp_config.client_secret_name"
-    print(f"SECRET_FETCH_TODO: Fetch secret '{idp_config.client_secret_name}' from GCP Secret Manager.")
+
+    if not idp_config.client_secret_name:
+        raise HTTPException(status_code=500, detail=f"Client secret name not configured for provider '{provider_name}'.")
+
+    client_secret_value = await fetch_gcp_secret(
+        secret_id=idp_config.client_secret_name,
+        client=sm_client
+    )
+
+    if not client_secret_value:
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve client secret for provider '{provider_name}'.")
 
     token_request_payload = {
         "grant_type": "authorization_code",
@@ -234,5 +274,23 @@ async def oidc_token_exchange(
         message="User authenticated successfully.",
         user_info=app_user
     )
+
+async def fetch_gcp_secret(
+    secret_id: str,
+    client: secretmanager_v1.SecretManagerServiceClient, # Injected client
+    project_id: str = settings.GCP_PROJECT_ID, # Use from settings
+    version_id: str = "latest"
+) -> Optional[str]:
+    if not project_id:
+        print("ERROR: GCP_PROJECT_ID not configured for fetching secret.")
+        return None
+    secret_name = f"projects/{project_id}/secrets/{secret_id}/versions/{version_id}"
+    try:
+        response = client.access_secret_version(request={"name": secret_name})
+        payload = response.payload.data.decode("UTF-8")
+        return payload
+    except Exception as e:
+        print(f"Error accessing secret '{secret_id}' in project '{project_id}': {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve critical secret: {secret_id}")
 
 # Further imports and router inclusions will go here later

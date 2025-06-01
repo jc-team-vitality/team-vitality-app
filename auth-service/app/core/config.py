@@ -13,10 +13,16 @@ class Settings(BaseSettings):
 
     # Firestore settings
     GCP_PROJECT_ID_FOR_FIRESTORE: Optional[str] = None # To be set in .env
+    GCP_PROJECT_ID: Optional[str] = None # To be set in .env, used for Secret Manager
     FIRESTORE_OIDC_STATE_COLLECTION: str = "oidc_states"
     OIDC_STATE_TTL_SECONDS: int = 900 # 15 minutes
+
+    # New settings for .well-known caching
+    FIRESTORE_WELL_KNOWN_CONFIGS_COLLECTION: str = "oidc_well_known_configs"
+    WELL_KNOWN_CONFIG_CACHE_TTL_SECONDS: int = 86400 # 24 hours
     BFF_OIDC_CALLBACK_URI: str = "YOUR_CONFIGURED_BFF_CALLBACK_URL_SINGLE_ENDPOINT"
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 settings = Settings()
 # For local development, create a .env file with actual DATABASE_URL and REFRESH_TOKEN_KMS_KEY_ID values.
+# NOTE: Ensure you add GCP_PROJECT_ID to your .env file for Secret Manager access.

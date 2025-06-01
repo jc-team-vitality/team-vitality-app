@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr, HttpUrl
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from uuid import UUID
 from datetime import datetime
 
@@ -76,3 +76,7 @@ class OIDCStateCache(BaseModel):
     pkce_code_verifier: str
     provider_name: str
     expires_at: datetime  # For Firestore TTL policy
+
+class OIDCWellKnownCache(BaseModel):
+    config_data: Dict[str, Any] # Stores the JSON content of the .well-known document
+    expires_at: datetime # For Firestore TTL policy and manual cache validation

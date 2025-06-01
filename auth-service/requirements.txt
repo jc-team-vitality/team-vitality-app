@@ -6,3 +6,4 @@ psycopg2-binary
 httpx
 PyJWT
 google-cloud-firestore
+google-cloud-secret-manager
