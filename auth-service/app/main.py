@@ -289,8 +289,13 @@ async def validate_id_token(
     if not matching_key_data:
         raise HTTPException(status_code=400, detail="No matching JWK found for token 'kid'.")
 
+    # Optionally, verify issuer matches well-known config before decoding (defense-in-depth)
+    if idp_config.issuer_uri != well_known_config.get("issuer"):
+        raise HTTPException(status_code=401, detail="Configured issuer does not match well-known issuer.")
+
     try:
         public_key = jwt.algorithms.RSAAlgorithm.from_jwk(matching_key_data)
+        # SECURE DECODE: verifies signature, audience, issuer, and standard claims
         decoded_token = jwt.decode(
             id_token,
             public_key,
@@ -298,6 +303,7 @@ async def validate_id_token(
             audience=idp_config.client_id,
             issuer=idp_config.issuer_uri
         )
+        # Nonce check (after successful decode)
         if decoded_token.get("nonce") != expected_nonce:
             raise HTTPException(status_code=400, detail="ID token nonce mismatch.")
         return decoded_token
@@ -307,6 +313,8 @@ async def validate_id_token(
         raise HTTPException(status_code=401, detail="Invalid ID token audience.")
     except jwt.InvalidIssuerError:
         raise HTTPException(status_code=401, detail="Invalid ID token issuer.")
+    except jwt.MissingRequiredClaimError as e:
+        raise HTTPException(status_code=400, detail=f"ID token missing required claim: {e}")
     except jwt.InvalidSignatureError:
         raise HTTPException(status_code=401, detail="Invalid ID token signature.")
     except jwt.PyJWTError as e:
