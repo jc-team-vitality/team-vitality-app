@@ -6,7 +6,7 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
 
     # Database configuration (placeholders, to be loaded from environment variables)
-    DATABASE_URL: Optional[str] = "postgresql://user:password@host:port/db"
+    DATABASE_URL: Optional[str] = None
     
     # KMS Key for encrypting/decrypting refresh tokens
     REFRESH_TOKEN_KMS_KEY_ID: Optional[str] = None
@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     # New settings for .well-known caching
     FIRESTORE_WELL_KNOWN_CONFIGS_COLLECTION: str = "oidc_well_known_configs"
     WELL_KNOWN_CONFIG_CACHE_TTL_SECONDS: int = 86400 # 24 hours
-    BFF_OIDC_CALLBACK_URI: str = "YOUR_CONFIGURED_BFF_CALLBACK_URL_SINGLE_ENDPOINT"
+    BFF_OIDC_CALLBACK_URI: str = None
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 settings = Settings()
