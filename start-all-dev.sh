@@ -63,16 +63,33 @@ echo "ai-service started with PID: $AI_PID"
 echo "Access at: http://localhost:8000"
 echo "========================================================"
 
+# Start auth-service
+# Run in a subshell in the background
+echo -e "\nStarting auth-service (FastAPI) on port 8001..."
+(
+    cd auth-service && \
+    echo "Activating virtual environment for auth-service..." && \
+    source .venv/bin/activate && \
+    echo "Starting uvicorn for auth-service..." && \
+    uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
+) &
+AUTH_PID=$!
+echo "auth-service started with PID: $AUTH_PID"
+echo "Access at: http://localhost:8001"
+echo "========================================================"
+
 # Output all running service URLs to a file
 URLS_FILE="dev-service-urls.txt"
 echo "web-application: http://localhost:3000" > $URLS_FILE
 echo "api-gateway: http://localhost:3001" >> $URLS_FILE
 echo "ai-service: http://localhost:8000" >> $URLS_FILE
+echo "auth-service: http://localhost:8001" >> $URLS_FILE
 
 echo -e "\nAll services are now running in development mode:"
 echo "web-application: http://localhost:3000"
 echo "api-gateway: http://localhost:3001"
 echo "ai-service: http://localhost:8000"
+echo "auth-service: http://localhost:8001"
 echo "========================================================"
 echo "Press Ctrl+C to stop this script and terminate all services."
 
@@ -80,7 +97,7 @@ echo "Press Ctrl+C to stop this script and terminate all services."
 CLEANUP_SCRIPT="cleanup-dev-services.sh"
 echo "#!/bin/bash" > $CLEANUP_SCRIPT
 echo "# Auto-generated script to kill dev service processes and remove itself" >> $CLEANUP_SCRIPT
-echo "PIDS=($WEB_PID $API_PID $AI_PID)" >> $CLEANUP_SCRIPT
+echo "PIDS=($WEB_PID $API_PID $AI_PID $AUTH_PID)" >> $CLEANUP_SCRIPT
 echo "for pid in \"\${PIDS[@]}\"; do" >> $CLEANUP_SCRIPT
 echo "  if ps -p \$pid > /dev/null 2>&1; then" >> $CLEANUP_SCRIPT
 echo "    echo Killing process \$pid..." >> $CLEANUP_SCRIPT
