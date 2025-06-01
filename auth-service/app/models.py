@@ -80,3 +80,8 @@ class OIDCStateCache(BaseModel):
 class OIDCWellKnownCache(BaseModel):
     config_data: Dict[str, Any] # Stores the JSON content of the .well-known document
     expires_at: datetime # For Firestore TTL policy and manual cache validation
+
+class JWKSCache(BaseModel):
+    # The document ID in Firestore could be a sanitized version of the jwks_uri
+    keys: List[Dict[str, Any]] # Stores the array of JWK objects
+    expires_at: datetime # For Firestore TTL policy and manual cache validation

@@ -20,6 +20,11 @@ class Settings(BaseSettings):
     # New settings for .well-known caching
     FIRESTORE_WELL_KNOWN_CONFIGS_COLLECTION: str = "oidc_well_known_configs"
     WELL_KNOWN_CONFIG_CACHE_TTL_SECONDS: int = 86400 # 24 hours
+
+    # New settings for JWKS caching
+    FIRESTORE_JWKS_CACHE_COLLECTION: str = "oidc_jwks_cache"
+    JWKS_CACHE_TTL_SECONDS: int = 3600 # 1 hour (JWKS keys can rotate, but usually not too frequently)
+
     BFF_OIDC_CALLBACK_URI: str = None
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
