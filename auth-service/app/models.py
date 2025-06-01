@@ -85,3 +85,13 @@ class JWKSCache(BaseModel):
     # The document ID in Firestore could be a sanitized version of the jwks_uri
     keys: List[Dict[str, Any]] # Stores the array of JWK objects
     expires_at: datetime # For Firestore TTL policy and manual cache validation
+
+class InternalTokenRefreshRequest(BaseModel):
+    user_id: UUID
+    provider_name: str # The common name of the identity provider (e.g., 'google')
+
+class InternalTokenRefreshResponse(BaseModel):
+    access_token: str
+    expires_in: Optional[int] = None # Seconds until expiry
+    token_type: str = "Bearer"
+    scopes: Optional[str] = None # Scopes associated with the new access token

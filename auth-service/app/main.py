@@ -28,9 +28,11 @@ from .models import (
     AppUser,
     OIDCStateCache,
     OIDCWellKnownCache,
-    JWKSCache # Add JWKSCache import
+    JWKSCache, # Add JWKSCache import
+    InternalTokenRefreshRequest, # Add InternalTokenRefreshRequest import
+    InternalTokenRefreshResponse  # Add InternalTokenRefreshResponse import
 )
-from .utils.kms_utils import encrypt_data_with_kms
+from .utils.kms_utils import encrypt_data_with_kms, decrypt_data_with_kms
 from google.cloud import kms_v1
 
 app = FastAPI(title=settings.PROJECT_NAME)
@@ -489,5 +491,110 @@ async def fetch_gcp_secret(
     except Exception as e:
         print(f"Error accessing secret '{secret_id}' in project '{project_id}': {e}")
         raise HTTPException(status_code=500, detail=f"Failed to retrieve critical secret: {secret_id}")
+
+@app.post("/internal/token/refresh", response_model=InternalTokenRefreshResponse, tags=["Internal API", "OIDC Authentication"])
+async def internal_refresh_access_token(
+    request_data: InternalTokenRefreshRequest = Body(...),
+    db_pg_session: AsyncSession = Depends(get_async_db_session),
+    db_firestore: firestore_v1.AsyncClient = Depends(get_firestore_db),
+    http_client: httpx.AsyncClient = Depends(get_http_client),
+    sm_client: secretmanager_v1.SecretManagerServiceClient = Depends(get_secret_manager_client),
+    kms_client: kms_v1.KeyManagementServiceClient = Depends(get_kms_client)
+):
+    # 1. Fetch IdP Configuration (still simulated)
+    idp_config = await get_identity_provider_config_from_db(request_data.provider_name)
+    if not idp_config or not idp_config.is_active:
+        raise HTTPException(status_code=404, detail=f"Provider '{request_data.provider_name}' not found or not active.")
+    
+    if not idp_config.supports_refresh_token:
+        raise HTTPException(status_code=400, detail=f"Refresh token not supported by provider '{request_data.provider_name}'.")
+
+    # 2. Fetch UserProviderLink to get the encrypted refresh token
+    link_query = text("""
+        SELECT encrypted_refresh_token 
+        FROM user_provider_links
+        WHERE user_id = :user_id AND provider_id = :provider_id
+    """)
+    result = await db_pg_session.execute(link_query, {"user_id": request_data.user_id, "provider_id": idp_config.id})
+    link_row = result.fetchone()
+
+    if not link_row or not link_row.encrypted_refresh_token:
+        raise HTTPException(status_code=404, detail="No refresh token found for this user and provider, or user/provider link does not exist.")
+    
+    encrypted_rt_bytes = link_row.encrypted_refresh_token
+
+    # 3. Fetch Client Secret
+    if not idp_config.client_secret_name:
+        raise HTTPException(status_code=500, detail=f"Client secret name not configured for provider '{request_data.provider_name}'.")
+    client_secret_value = await fetch_gcp_secret(
+        secret_id=idp_config.client_secret_name,
+        client=sm_client
+    )
+    if not client_secret_value:
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve client secret for provider '{request_data.provider_name}'.")
+
+    # 4. Decrypt Refresh Token using KMS
+    if not settings.REFRESH_TOKEN_KMS_KEY_ID:
+        raise HTTPException(status_code=500, detail="Refresh token KMS key not configured.")
+    
+    try:
+        decrypted_refresh_token = await decrypt_data_with_kms(
+            kms_client=kms_client,
+            kms_key_id=settings.REFRESH_TOKEN_KMS_KEY_ID,
+            ciphertext=encrypted_rt_bytes
+        )
+    except Exception as e:
+        print(f"Failed to decrypt refresh token for user {request_data.user_id}, provider {request_data.provider_name}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to process stored refresh token.")
+
+    # 5. Fetch IdP .well-known config for token_endpoint
+    well_known_config = await fetch_idp_well_known_config_impl(idp_config.well_known_uri, db_firestore, http_client)
+    if not well_known_config or not well_known_config.get("token_endpoint"):
+        raise HTTPException(status_code=500, detail=f"Could not retrieve token endpoint for provider '{request_data.provider_name}'.")
+    token_endpoint = well_known_config["token_endpoint"]
+
+    # 6. Call IdP Token Endpoint with refresh_token grant
+    refresh_payload = {
+        "grant_type": "refresh_token",
+        "refresh_token": decrypted_refresh_token,
+        "client_id": idp_config.client_id,
+        "client_secret": client_secret_value,
+        # "scope": idp_config.scopes # Uncomment if needed by IdP
+    }
+
+    try:
+        token_response = await http_client.post(token_endpoint, data=refresh_payload)
+        token_response.raise_for_status()
+        new_token_data = token_response.json()
+    except httpx.HTTPStatusError as e:
+        error_detail = e.response.json() if e.response.content else str(e)
+        if e.response.status_code == 400 and error_detail.get("error") == "invalid_grant":
+            print(f"REFRESH_TOKEN_INVALID_GRANT_TODO: Refresh token for user {request_data.user_id}, provider {request_data.provider_name} is invalid. Consider deleting it.")
+            raise HTTPException(status_code=400, detail={"message": "Refresh token is invalid or expired.", "idp_error": error_detail})
+        raise HTTPException(status_code=e.response.status_code, detail={"message": "Failed to refresh access token.", "idp_error": error_detail})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Access token refresh HTTP request failed: {str(e)}")
+
+    new_access_token = new_token_data.get("access_token")
+    new_expires_in = new_token_data.get("expires_in")
+    new_scopes = new_token_data.get("scope")
+
+    if not new_access_token:
+        raise HTTPException(status_code=500, detail="New access token not found in refresh response.")
+
+    # REFRESH_TOKEN_ROTATION_TODO:
+    # If new_token_data contains a 'refresh_token', it means the IdP rotated it.
+    # The new refresh_token should be encrypted using KMS and updated in the
+    # user_provider_links table for this user_id and provider_id.
+    # This is a critical step if the IdP supports refresh token rotation.
+    if "refresh_token" in new_token_data:
+        print(f"REFRESH_TOKEN_ROTATION_TODO: New refresh token received. Encrypt and update for user {request_data.user_id}, provider {request_data.provider_name}.")
+
+    return InternalTokenRefreshResponse(
+        access_token=new_access_token,
+        expires_in=new_expires_in,
+        token_type=new_token_data.get("token_type", "Bearer"),
+        scopes=new_scopes
+    )
 
 # Further imports and router inclusions will go here later
