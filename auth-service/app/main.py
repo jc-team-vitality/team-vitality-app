@@ -45,6 +45,28 @@ async def health_check():
 async def get_http_client() -> httpx.AsyncClient:
     return httpx.AsyncClient()
 
+# --- Updated get_identity_provider_config_from_db: fetch from PostgreSQL ---
+async def get_identity_provider_config_from_db(
+    provider_name: str,
+    db_session: AsyncSession
+) -> Optional[IdentityProviderConfig]:
+    query = text("""
+        SELECT id, name, issuer_uri, well_known_uri, client_id, 
+               client_secret_name, scopes, is_active, supports_refresh_token,
+               created_at, updated_at
+        FROM identity_providers
+        WHERE name = :provider_name AND is_active = TRUE
+    """)
+    try:
+        result = await db_session.execute(query, {"provider_name": provider_name})
+        row = result.fetchone()
+        if row:
+            return IdentityProviderConfig.model_validate(dict(row._mapping))
+        return None
+    except Exception as e:
+        print(f"Database error fetching IdP config for '{provider_name}': {e}")
+        return None
+
 # Placeholder for actual DB lookup for IdentityProviderConfig
 async def get_identity_provider_config_from_db(provider_name: str) -> Optional[IdentityProviderConfig]:
     # In a real implementation, this would query the PostgreSQL 'identity_providers' table.
@@ -328,9 +350,10 @@ async def validate_id_token(
 @app.post("/oidc/initiate-login/{provider_name}", response_model=OIDCInitiateLoginResponse, tags=["OIDC Authentication"])
 async def initiate_oidc_login(
     provider_name: str = Path(..., description="The common name of the identity provider (e.g., 'google')"),
-    db: firestore_v1.AsyncClient = Depends(get_firestore_db)
+    db: firestore_v1.AsyncClient = Depends(get_firestore_db),
+    db_pg_session: AsyncSession = Depends(get_async_db_session)
 ):
-    idp_config = await get_identity_provider_config_from_db(provider_name)
+    idp_config = await get_identity_provider_config_from_db(provider_name, db_pg_session)
     if not idp_config or not idp_config.is_active:
         raise HTTPException(status_code=404, detail=f"Provider '{provider_name}' not found or not active.")
     state = secrets.token_urlsafe(32)
@@ -376,7 +399,7 @@ async def oidc_token_exchange(
     expected_nonce = cached_state_data["nonce"]
     pkce_code_verifier = cached_state_data["pkce_code_verifier"]
 
-    idp_config = await get_identity_provider_config_from_db(provider_name)
+    idp_config = await get_identity_provider_config_from_db(provider_name, db_pg_session)
     if not idp_config:
         raise HTTPException(status_code=500, detail=f"Configuration for provider '{provider_name}' not found unexpectedly.")
 
