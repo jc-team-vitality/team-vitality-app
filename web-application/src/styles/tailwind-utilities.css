@@ -1,0 +1,11 @@
+/* Converted from SCSS to Tailwind utility classes. Use these as @apply in your components or in a custom CSS file if needed. */
+
+/* Example: Use in a component or in a custom CSS file with @apply */
+
+/* .custom-link equivalent in Tailwind */
+.custom-link {
+  @apply text-sky-600 underline hover:text-sky-700;
+}
+
+/* For body font, use Tailwind's font-sans and optionally set Inter in tailwind.config.js */
+/* Example usage: <body class="font-sans"> */
