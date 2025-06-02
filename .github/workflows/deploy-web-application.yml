@@ -1,54 +1,77 @@
-name: Deploy Next.js to Firebase Hosting
+name: Deploy Next.js Web Application to Firebase Hosting
 
 on:
   push:
     branches:
-      - main # Or your deployment branch, e.g., master, prod
+      - main # Or your deployment branch
     paths:
-      - 'web-application/**' # Trigger only if changes are in the web-application directory
+      - 'web-application/**'
+      - 'packages/shared-dtos/**' # Trigger if shared DTOs change
+      - '.github/workflows/deploy-web-application.yml' # Trigger if workflow changes
+      - 'pnpm-lock.yaml' # Trigger if lockfile changes
+      - 'turbo.json' # Trigger if turbo config changes
+      - 'package.json' # Root package.json
   workflow_dispatch: # Allows manual triggering
 
 jobs:
-  build_and_deploy_hosting:
-    name: Build and Deploy to Firebase Hosting
+  build_and_deploy_firebase_hosting:
+    name: Build and Deploy Web App to Firebase Hosting
     runs-on: ubuntu-latest
     permissions:
       contents: 'read'
-      id-token: 'write' # Required for Workload Identity Federation
+      id-token: 'write' # Required for Workload Identity Federation with GCP
 
-    defaults:
-      run:
-        working-directory: ./web-application # Set default working directory for all run steps
+    # No top-level working-directory, commands will run from repo root by default
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
-
-      - name: Authenticate to Google Cloud
-        id: auth # Give the auth step an ID
-        uses: 'google-github-actions/auth@v2'
         with:
-          workload_identity_provider: '${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}'
-          service_account: '${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}'
+          fetch-depth: 0 # Needed for Turborepo to correctly determine changed files
+
+      - name: Setup PNPM
+        uses: pnpm/action-setup@v4
+        with:
+          version: latest # Or specify a PNPM version
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: web-application/package-lock.json
+          cache: 'pnpm' # Configure caching for PNPM
 
-      - name: Install Dependencies
-        working-directory: ./web-application
-        run: npm ci
+      - name: Install Monorepo Dependencies
+        run: pnpm install --frozen-lockfile
 
-      - name: Build Next.js Application
-        working-directory: ./web-application
-        run: npm run build
+      # Turborepo Remote Caching (Optional but recommended for faster CI builds)
+      # Configure these secrets in your GitHub repository settings
+      # - TURBO_TOKEN: Your Turborepo Remote Cache token
+      # - TURBO_TEAM: Your Turborepo team slug
+      # - name: Configure Turborepo Remote Caching
+      #   run: npx turbo login && npx turbo link
+      #   env:
+      #     TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+      #     TURBO_TEAM: ${{ secrets.TURBO_TEAM }}
+
+      - name: Build Web Application with Turborepo
+        # This command builds 'web-application' and any of its workspace dependencies (like shared-dtos)
+        # Turborepo will use its cache if available.
+        run: pnpm exec turbo run build --filter=web-application...
+
+      - name: Authenticate to Google Cloud (for Firebase)
+        id: auth
+        uses: 'google-github-actions/auth@v2'
+        with:
+          workload_identity_provider: '${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}' # Ensure this secret is set
+          service_account: '${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL_FOR_FIREBASE }}' # Use a dedicated SA for Firebase deployment if possible
 
       - name: Deploy to Firebase Hosting
-        working-directory: ./web-application # Run this step from the correct directory
+        # The firebase-tools CLI needs to be run in the context of the web-application
+        # or configured to know where the build output and firebase.json are.
+        # Firebase CLI with webframeworks support should detect Next.js output.
+        working-directory: ./web-application # firebase.json is typically here
         run: |
           npx firebase-tools@latest deploy --only hosting --project ${{ secrets.GCP_PROJECT_ID }} --force
         env:
           FIREBASE_CLI_EXPERIMENTS: webframeworks # Enable framework-aware CLI features
+          # GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Sometimes needed by firebase-tools for some integrations

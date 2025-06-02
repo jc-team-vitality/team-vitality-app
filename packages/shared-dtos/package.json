@@ -5,7 +5,7 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "pnpm exec tsc -p tsconfig.json",
     "clean": "rimraf dist",
     "dev": "tsc -p tsconfig.json --watch"
   },
