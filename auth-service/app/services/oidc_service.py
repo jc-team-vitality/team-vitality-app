@@ -10,7 +10,7 @@ from google.cloud import kms_v1
 from pydantic import HttpUrl
 from fastapi import HTTPException
 import httpx
-from typing import Optional, Literal  # Add Literal
+from typing import Optional, Literal, List, Dict, Any  # Add Literal, List, Dict, Any
 from uuid import UUID
 from datetime import datetime, timezone, timedelta
 import jwt
@@ -354,3 +354,35 @@ async def process_account_link(
     except Exception as e:
         print(f"Database error during account link creation: {e}")
         raise HTTPException(status_code=500, detail="Failed to link new provider account due to a database error.")
+
+# --- Service: Derive Roles from IdP Claims ---
+async def derive_roles_from_idp_claims(
+    idp_config: IdentityProviderConfig,
+    user_claims: Dict[str, Any]
+) -> List[str]:
+    """
+    Derives additional roles from IdP claims if the IdP configuration enables it.
+    These roles are determined on-the-fly based on the claims provided by the IdP.
+    """
+    derived_roles = set()
+    if idp_config.derives_roles_from_claims:
+        print(f"CLAIM_ROLE_DERIVATION_TODO: Deriving roles from claims for user: {user_claims.get('email')}, provider: {idp_config.name}")
+        # Example 1: Check a generic 'groups' claim often provided by IdPs
+        idp_groups = user_claims.get("groups", [])
+        if isinstance(idp_groups, list):
+            if "administrators_group_from_idp" in idp_groups:
+                derived_roles.add("Admin")
+            if "therapists_group_from_idp" in idp_groups:
+                derived_roles.add("Therapist")
+        # Example 2: Check a specific custom claim for roles (e.g., 'app_roles')
+        custom_app_roles = user_claims.get("custom_app_roles", [])
+        if isinstance(custom_app_roles, list):
+            for role in custom_app_roles:
+                if isinstance(role, str):
+                    derived_roles.add(role.capitalize())
+        # Example 3: Specific logic for your Google Workspace IdP
+        if idp_config.name == "google_workspace_team_vitality":
+            iam_mapped_roles = user_claims.get("gcp_iam_mapped_roles", [])
+            if "team_vitality_app_admin_role_from_gcp_claim" in iam_mapped_roles:
+                derived_roles.add("Admin")
+    return sorted(list(derived_roles))

@@ -22,7 +22,8 @@ from app.services.oidc_service import (
     validate_id_token,
     jit_provision_user,
     fetch_gcp_secret,
-    process_account_link
+    process_account_link,
+    derive_roles_from_idp_claims
 )
 from app.utils.kms_utils import encrypt_data_with_kms
 
@@ -219,17 +220,19 @@ async def oidc_token_exchange(
         try:
             await process_account_link(idp_config, merged_claims, current_app_user_id, db_pg_session)
             # Fetch the app_user to return in response
-            user_query = sql_text("SELECT id, email, first_name, last_name, created_at, updated_at FROM app_users WHERE id = :user_id")
+            user_query = sql_text("SELECT id, email, first_name, last_name, created_at, updated_at, roles FROM app_users WHERE id = :user_id")
             result = await db_pg_session.execute(user_query, {"user_id": current_app_user_id})
             user_row = result.fetchone()
             if user_row:
-                final_app_user = AppUser.model_validate(dict(user_row._mapping))
+                app_user_with_db_roles = AppUser.model_validate(dict(user_row._mapping))
+            else:
+                app_user_with_db_roles = None
             response_message = "Account linked successfully."
         except HTTPException as e:
             raise e
     elif flow_type == "login":
         try:
-            final_app_user = await jit_provision_user(idp_config, merged_claims, db_pg_session)
+            app_user_with_db_roles = await jit_provision_user(idp_config, merged_claims, db_pg_session)
             response_message = "User authenticated successfully."
         except HTTPException as e:
             if e.status_code == 409:
@@ -238,9 +241,20 @@ async def oidc_token_exchange(
     else:
         raise HTTPException(status_code=500, detail="Unknown flow type in OIDC state.")
 
+    # --- Derive additional roles from IdP claims and merge with DB roles ---
+    if not app_user_with_db_roles:
+        raise HTTPException(status_code=500, detail="User processing failed prior to role merging.")
+    additional_claim_derived_roles = await derive_roles_from_idp_claims(
+        idp_config=idp_config,
+        user_claims=merged_claims
+    )
+    final_effective_roles_set = set(app_user_with_db_roles.roles) | set(additional_claim_derived_roles)
+    final_effective_roles_list = sorted(list(final_effective_roles_set))
+    final_app_user_for_response = app_user_with_db_roles.model_copy(update={"roles": final_effective_roles_list})
+
     # --- Encrypt and store refresh token if present and supported ---
-    if final_app_user and refresh_token and idp_config.supports_refresh_token:
-        print(f"Attempting to encrypt and store refresh token for user {final_app_user.id}, provider {idp_config.name}, flow {flow_type}")
+    if final_app_user_for_response and refresh_token and idp_config.supports_refresh_token:
+        print(f"Attempting to encrypt and store refresh token for user {final_app_user_for_response.id}, provider {idp_config.name}, flow {flow_type}")
         if not settings.REFRESH_TOKEN_KMS_KEY_ID:
             print("WARNING: REFRESH_TOKEN_KMS_KEY_ID not set. Cannot encrypt refresh token.")
         else:
@@ -261,20 +275,20 @@ async def oidc_token_exchange(
                     update_link_query,
                     {
                         "encrypted_refresh_token": encrypted_rt_bytes,
-                        "user_id": final_app_user.id,
+                        "user_id": final_app_user_for_response.id,
                         "provider_id": idp_config.id,
                         "provider_user_id_claim": provider_user_id_claim
                     }
                 )
-                print(f"Encrypted refresh token stored for user {final_app_user.id}, provider {idp_config.name}")
+                print(f"Encrypted refresh token stored for user {final_app_user_for_response.id}, provider {idp_config.name}")
             except Exception as e:
                 print(f"ERROR: Failed to encrypt and store refresh token during {flow_type} flow: {e}")
 
-    if final_app_user:
+    if final_app_user_for_response:
         return OIDCTokenExchangeResponse(
             status="success",
             message=response_message,
-            user_info=final_app_user
+            user_info=final_app_user_for_response
         )
     else:
         raise HTTPException(status_code=500, detail="User processing failed after OIDC exchange.")

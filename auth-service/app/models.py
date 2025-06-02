@@ -18,6 +18,7 @@ class IdentityProviderConfigBase(BaseModel):
     scopes: str # Space-separated string
     is_active: bool = True
     supports_refresh_token: bool
+    derives_roles_from_claims: bool = False  # New field for IdP role derivation
 
 class IdentityProviderConfigCreate(IdentityProviderConfigBase):
     pass
@@ -111,6 +112,7 @@ class IdentityProviderConfigUpdate(BaseModel):
     scopes: Optional[str] = None # Space-separated string
     is_active: Optional[bool] = None
     supports_refresh_token: Optional[bool] = None
+    derives_roles_from_claims: Optional[bool] = None  # New field for update
     # id, created_at, updated_at are typically not updatable directly via this DTO
 
 class OIDCInitiateLinkAccountRequest(BaseModel):
