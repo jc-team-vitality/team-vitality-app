@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { GoogleAuth } from 'google-auth-library';
 import { firstValueFrom } from 'rxjs';
 import { OIDCTokenExchangeResponse } from './oidc-token-exchange-response.interface';
+import { IdentityProviderConfigDto, IdentityProviderConfigCreateDto, IdentityProviderConfigUpdateDto } from '../admin/dto/idp-config.dto';
 
 @Injectable()
 export class AuthRelayService {
@@ -93,6 +94,85 @@ export class AuthRelayService {
     } catch (error) {
       console.error(`Error calling auth-service initiate-account-link for ${providerName}, user ${appUserId}:`, error.response?.data || error.message);
       throw new InternalServerErrorException('Account linking initiation failed.');
+    }
+  }
+
+  async createIdpConfig(createDto: IdentityProviderConfigCreateDto): Promise<IdentityProviderConfigDto> {
+    const targetUrl = `${this.authServiceBaseUrl}/admin/identity-providers/`;
+    const idToken = await this.getAuthServiceIdToken();
+    try {
+      const response = await firstValueFrom(
+        this.httpService.post(targetUrl, createDto, {
+          headers: { Authorization: `Bearer ${idToken}` },
+        }),
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error calling auth-service createIdpConfig:', error.response?.data || error.message);
+      throw new InternalServerErrorException('Failed to create IdP configuration.');
+    }
+  }
+
+  async listIdpConfigs(skip: number = 0, limit: number = 100): Promise<IdentityProviderConfigDto[]> {
+    const targetUrl = `${this.authServiceBaseUrl}/admin/identity-providers/?skip=${skip}&limit=${limit}`;
+    const idToken = await this.getAuthServiceIdToken();
+    try {
+      const response = await firstValueFrom(
+        this.httpService.get(targetUrl, {
+          headers: { Authorization: `Bearer ${idToken}` },
+        }),
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error calling auth-service listIdpConfigs:', error.response?.data || error.message);
+      throw new InternalServerErrorException('Failed to list IdP configurations.');
+    }
+  }
+
+  async getIdpConfig(providerId: string): Promise<IdentityProviderConfigDto> {
+    const targetUrl = `${this.authServiceBaseUrl}/admin/identity-providers/${providerId}`;
+    const idToken = await this.getAuthServiceIdToken();
+    try {
+      const response = await firstValueFrom(
+        this.httpService.get(targetUrl, {
+          headers: { Authorization: `Bearer ${idToken}` },
+        }),
+      );
+      return response.data;
+    } catch (error) {
+      console.error(`Error calling auth-service getIdpConfig for ${providerId}:`, error.response?.data || error.message);
+      throw new InternalServerErrorException('Failed to retrieve IdP configuration.');
+    }
+  }
+
+  async updateIdpConfig(providerId: string, updateDto: IdentityProviderConfigUpdateDto): Promise<IdentityProviderConfigDto> {
+    const targetUrl = `${this.authServiceBaseUrl}/admin/identity-providers/${providerId}`;
+    const idToken = await this.getAuthServiceIdToken();
+    try {
+      const response = await firstValueFrom(
+        this.httpService.put(targetUrl, updateDto, {
+          headers: { Authorization: `Bearer ${idToken}` },
+        }),
+      );
+      return response.data;
+    } catch (error) {
+      console.error(`Error calling auth-service updateIdpConfig for ${providerId}:`, error.response?.data || error.message);
+      throw new InternalServerErrorException('Failed to update IdP configuration.');
+    }
+  }
+
+  async deleteIdpConfig(providerId: string): Promise<void> {
+    const targetUrl = `${this.authServiceBaseUrl}/admin/identity-providers/${providerId}`;
+    const idToken = await this.getAuthServiceIdToken();
+    try {
+      await firstValueFrom(
+        this.httpService.delete(targetUrl, {
+          headers: { Authorization: `Bearer ${idToken}` },
+        }),
+      );
+    } catch (error) {
+      console.error(`Error calling auth-service deleteIdpConfig for ${providerId}:`, error.response?.data || error.message);
+      throw new InternalServerErrorException('Failed to delete IdP configuration.');
     }
   }
 }
