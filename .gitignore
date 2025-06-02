@@ -166,3 +166,6 @@ firebase-debug.log
 # Ignore the auto-generated cleanup script and URLs file
 cleanup-dev-services.sh
 dev-service-urls.txt
+
+# Ignore turbo build cache
+.turbo/
