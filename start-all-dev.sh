@@ -26,26 +26,13 @@ docker run --rm --network=host -v $(pwd)/database-migrations/sql:/flyway/sql fly
 echo "Flyway migrations complete."
 echo "========================================================"
 
-# Start web-application
-# Run in a subshell in the background
-echo -e "\nStarting web-application (Next.js) on port 3000..."
-(
-    cd web-application && npm run dev
-) &
-WEB_PID=$!
-echo "web-application started with PID: $WEB_PID"
-echo "Access at: http://localhost:3000"
-echo "========================================================"
-
-# Start api-gateway
-# Run in a subshell in the background
-echo -e "\nStarting api-gateway (NestJS) on port 3001..."
-(
-    cd api-gateway && npm run start:dev
-) &
-API_PID=$!
-echo "api-gateway started with PID: $API_PID"
-echo "Access at: http://localhost:3001"
+echo -e "\nStarting web-application and api-gateway (monorepo) dev servers..."
+# Use pnpm to start both dev servers in parallel
+pnpm run dev &
+MONOREPO_PID=$!
+echo "web-application and api-gateway dev servers started with PID: $MONOREPO_PID"
+echo "Access web-application at: http://localhost:3000"
+echo "Access api-gateway at: http://localhost:3001"
 echo "========================================================"
 
 # Start ai-service
