@@ -30,9 +30,10 @@ class AppUserBase(BaseModel):
     email: EmailStr
     first_name: Optional[str] = None
     last_name: Optional[str] = None
+    roles: List[str]  # Add this line for user roles
 
 class AppUserCreate(AppUserBase):
-    pass # Add password fields here if managing local passwords, though OIDC is primary
+    pass # Roles will be defaulted by the database or can be set by admin flows later.
 
 class AppUser(AppUserBase, BaseAuditModel):
     class Config:

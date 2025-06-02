@@ -173,7 +173,7 @@ async def jit_provision_user(
     if not provider_user_id or not email:
         raise HTTPException(status_code=400, detail="Missing required user claims (sub or email) from IdP.")
     link_query = text("""
-        SELECT ul.user_id, u.email, u.first_name, u.last_name, u.id, u.created_at, u.updated_at
+        SELECT ul.user_id, u.email, u.first_name, u.last_name, u.id, u.created_at, u.updated_at, u.roles
         FROM user_provider_links ul
         JOIN app_users u ON ul.user_id = u.id
         WHERE ul.provider_id = :provider_id AND ul.provider_user_id = :provider_user_id
@@ -182,7 +182,7 @@ async def jit_provision_user(
     existing_linked_user_row = result.fetchone()
     if existing_linked_user_row:
         return AppUser.model_validate(dict(existing_linked_user_row._mapping))
-    email_query = text("SELECT id, email, first_name, last_name, created_at, updated_at FROM app_users WHERE email = :email")
+    email_query = text("SELECT id, email, first_name, last_name, created_at, updated_at, roles FROM app_users WHERE email = :email")
     result = await db_session.execute(email_query, {"email": email})
     existing_email_user_row = result.fetchone()
     if existing_email_user_row:
@@ -190,14 +190,21 @@ async def jit_provision_user(
             status_code=409,
             detail="An account with this email already exists. Please log in using your original method and link this provider from your account settings."
         )
+    # 3. No existing link AND no email conflict: Create new AppUser and UserProviderLink
+    default_roles = ['User']  # Application defines the default roles
     new_user_query = text("""
-        INSERT INTO app_users (email, first_name, last_name)
-        VALUES (:email, :first_name, :last_name)
-        RETURNING id, email, first_name, last_name, created_at, updated_at
+        INSERT INTO app_users (email, first_name, last_name, roles)
+        VALUES (:email, :first_name, :last_name, :roles)
+        RETURNING id, email, first_name, last_name, created_at, updated_at, roles
     """)
     result = await db_session.execute(
         new_user_query,
-        {"email": email, "first_name": first_name, "last_name": last_name}
+        {
+            "email": email,
+            "first_name": first_name,
+            "last_name": last_name,
+            "roles": default_roles
+        }
     )
     new_user_row = result.fetchone()
     if not new_user_row:
