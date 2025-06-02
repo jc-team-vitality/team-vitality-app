@@ -128,4 +128,35 @@ export class AuthController {
       email: user.email,
     };
   }
+
+  @Post('link/:providerName')
+  @UseGuards(JwtAuthGuard)
+  async initiateLinkAccount(
+    @Param('providerName') providerName: string,
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
+    const user = req.user as SessionJwtPayload;
+    if (!user || !user.sub) {
+      throw new UnauthorizedException('User not authenticated.');
+    }
+    const appUserId = user.sub;
+    try {
+      const { authorizationUrl, state } = await this.authRelayService.initiateAccountLink(
+        providerName,
+        appUserId,
+      );
+      res.cookie('oidc_state', state, {
+        httpOnly: true,
+        secure: this.configService.get<string>('NODE_ENV') !== 'development',
+        maxAge: 15 * 60 * 1000, // 15 minutes
+        path: '/api/auth/oidc/callback',
+        sameSite: 'lax',
+      });
+      res.redirect(302, authorizationUrl);
+    } catch (error) {
+      console.error('Error during account linking initiation:', error);
+      this.handleRedirect(res, 'FRONTEND_ERROR_REDIRECT_URL', 'link_initiation_failed', '/');
+    }
+  }
 }

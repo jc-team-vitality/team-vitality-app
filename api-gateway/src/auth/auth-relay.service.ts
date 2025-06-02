@@ -67,4 +67,32 @@ export class AuthRelayService {
       throw new InternalServerErrorException('Authentication failed during token exchange with auth service.');
     }
   }
+
+  async initiateAccountLink(
+    providerName: string,
+    appUserId: string
+  ): Promise<{ authorizationUrl: string; state: string }> {
+    const targetUrl = `${this.authServiceBaseUrl}/oidc/link-account/initiate/${providerName}`;
+    try {
+      const idToken = await this.getAuthServiceIdToken();
+      const response = await firstValueFrom(
+        this.httpService.post(
+          targetUrl,
+          { app_user_id: appUserId },
+          { headers: { Authorization: `Bearer ${idToken}` } },
+        ),
+      );
+      if (response.data && response.data.authorization_url && response.data.state) {
+        return {
+          authorizationUrl: response.data.authorization_url,
+          state: response.data.state,
+        };
+      } else {
+        throw new Error('Invalid response structure from auth-service for account link initiation.');
+      }
+    } catch (error) {
+      console.error(`Error calling auth-service initiate-account-link for ${providerName}, user ${appUserId}:`, error.response?.data || error.message);
+      throw new InternalServerErrorException('Account linking initiation failed.');
+    }
+  }
 }
