@@ -1,0 +1,17 @@
+{
+  "name": "@teamvitality/shared-dtos",
+  "version": "1.0.0",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p .",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "zod": "^3.20.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
+}

@@ -4,7 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { GoogleAuth } from 'google-auth-library';
 import { firstValueFrom } from 'rxjs';
 import { OIDCTokenExchangeResponse } from './oidc-token-exchange-response.interface';
-import { IdentityProviderConfigDto, IdentityProviderConfigCreateDto, IdentityProviderConfigUpdateDto } from '../admin/dto/idp-config.dto';
+import { IdentityProviderConfigDto, IdentityProviderConfigCreateDto, IdentityProviderConfigUpdateDto } from '@teamvitality/shared-dtos';
 
 @Injectable()
 export class AuthRelayService {

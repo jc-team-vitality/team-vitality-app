@@ -1,12 +1,19 @@
 import {
   Controller, Get, Post, Put, Delete, Param, Body, Query,
-  UseGuards, ParseUUIDPipe, HttpStatus, HttpCode
+  UseGuards, ParseUUIDPipe, HttpStatus, HttpCode, UsePipes
 } from '@nestjs/common';
 import { AuthRelayService } from '../auth/auth-relay.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
-import { IdentityProviderConfigDto, IdentityProviderConfigCreateDto, IdentityProviderConfigUpdateDto } from './dto/idp-config.dto';
+import {
+  IdentityProviderConfigDto,
+  IdentityProviderConfigCreateDto,
+  IdentityProviderConfigUpdateDto,
+  IdentityProviderConfigCreateSchema,
+  IdentityProviderConfigUpdateSchema
+} from '@teamvitality/shared-dtos';
+import { ZodValidationPipe } from 'nestjs-zod';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiParam, ApiQuery } from '@nestjs/swagger';
 
 @ApiTags('Admin - Identity Provider Configurations')
@@ -18,6 +25,7 @@ export class IdpConfigsController {
 
   @Post()
   @Roles('Admin')
+  @UsePipes(new ZodValidationPipe(IdentityProviderConfigCreateSchema))
   @ApiOperation({ summary: 'Create a new IdP configuration' })
   async create(
     @Body() createDto: IdentityProviderConfigCreateDto,
@@ -49,6 +57,7 @@ export class IdpConfigsController {
 
   @Put(':providerId')
   @Roles('Admin')
+  @UsePipes(new ZodValidationPipe(IdentityProviderConfigUpdateSchema))
   @ApiOperation({ summary: 'Update an IdP configuration by ID' })
   @ApiParam({ name: 'providerId', type: String, format: 'uuid', description: 'IdP Configuration ID' })
   async update(
