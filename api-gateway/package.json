@@ -1,5 +1,5 @@
 {
-  "name": "team-vitality-api-gateway",
+  "name": "api-gateway",
   "version": "0.0.1",
   "description": "API Gateway for Team Vitality",
   "author": "",
@@ -7,7 +7,7 @@
   "license": "UNLICENSED",
   "scripts": {
     "build": "nest build",
-    "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
+    "dev": "nest start --watch",
     "start": "node dist/main",
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
@@ -17,7 +17,8 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./test/jest-e2e.json"
+    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "clean": "rimraf dist"
   },
   "dependencies": {
     "@google-cloud/kms": "^5.0.1",
@@ -37,7 +38,7 @@
     "reflect-metadata": "^0.1.13",
     "rimraf": "^6.0.1",
     "rxjs": "^7.8.1",
-    "@teamvitality/shared-dtos": "file:../packages/shared-dtos"
+    "@teamvitality/shared-dtos": "workspace:*"
   },
   "devDependencies": {
     "@nestjs/cli": "^10.0.0",

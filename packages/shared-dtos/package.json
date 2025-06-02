@@ -5,11 +5,12 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "tsc -p .",
-    "clean": "rm -rf dist"
+    "build": "tsc -p tsconfig.json",
+    "clean": "rimraf dist",
+    "dev": "tsc -p tsconfig.json --watch"
   },
   "dependencies": {
-    "zod": "^3.20.0"
+    "zod": "^3.22.0"
   },
   "devDependencies": {
     "typescript": "^5.0.0"

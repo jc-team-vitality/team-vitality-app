@@ -1,0 +1,9 @@
+packages:
+  - api-gateway
+  - web-application
+  - packages/*
+onlyBuiltDependencies:
+  - '@nestjs/core'
+  - '@scarf/scarf'
+  - protobufjs
+  - unrs-resolver
