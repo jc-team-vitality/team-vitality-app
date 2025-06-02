@@ -11,6 +11,7 @@ import { Algorithm } from 'jsonwebtoken';
 export interface SessionJwtPayload {
   sub: string; // Typically the app_user_id
   email: string;
+  roles: string[]; // Add this line for user roles
   iss?: string;
   aud?: string;
   iat?: number;

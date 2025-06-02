@@ -12,6 +12,7 @@ export interface OIDCTokenExchangeResponse {
 export interface AppUser {
   id: string;
   email: string;
+  roles?: string[]; // Add this line for user roles
   first_name?: string;
   last_name?: string;
   created_at?: string;

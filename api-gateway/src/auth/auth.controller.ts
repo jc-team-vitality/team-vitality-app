@@ -78,7 +78,11 @@ export class AuthController {
       const authServiceResponse = await this.authRelayService.exchangeCodeForToken(code, stateFromIdp);
       if (authServiceResponse.status === 'success' && authServiceResponse.user_info) {
         const appUser = authServiceResponse.user_info;
-        const payload = { sub: appUser.id, email: appUser.email };
+        const payload: SessionJwtPayload = {
+          sub: appUser.id,
+          email: appUser.email,
+          roles: appUser.roles && appUser.roles.length > 0 ? appUser.roles : ['User'],
+        };
         const sessionToken = await this.kmsJwtService.signKmsJwt(payload);
         res.cookie('session_token', sessionToken, {
           httpOnly: true,
