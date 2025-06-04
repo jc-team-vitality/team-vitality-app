@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Team Vitality - Your Compassionate Health Partner</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts - Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@200..700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Forum:wght@200..700&display=swap" rel="stylesheet">
+    <style>
+        /* Custom styles to ensure Inter font is applied and for specific color definitions */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #E0E0E0; /* Further Darkened Neutral Light Gray */
+            color: #333333; /* Neutral Dark Gray */
+        }
+        /* New font for the header title */
+        .font-logo {
+            font-family: 'Oswald', sans-serif;
+            font-weight: 700; /* Bold for emphasis */
+        }
+        /* Updated Vibrant Gradient Color Palette based on provided logo image */
+        /* Primary Blue Gradient for Hero Section and Final CTA */
+        .bg-gradient-primary-blue {
+            background-image: linear-gradient(to right, #1A5276, #1E88E5); /* Darker blue to vibrant blue */
+        }
+        /* Secondary Green Gradient for Testimonials Section */
+        .bg-gradient-secondary-green {
+            background-image: linear-gradient(to right, #2F6A31, #43A047); /* Darker green to vibrant green */
+        }
+        /* Accent Coral Gradient for Buttons and Community Feature Icon */
+        .bg-gradient-accent-coral {
+            background-image: linear-gradient(to right, #FF8C69, #FF6347); /* Lighter coral to vibrant coral */
+        }
+
+        /* Solid colors for text and other elements where gradients aren't suitable */
+        .text-primary-blue-solid { color: #1E88E5; }
+        .text-secondary-green-solid { color: #43A047; }
+        .text-accent-coral-solid { color: #FF6347; }
+        .text-accent-light-coral-solid { color: #FF8C69; }
+        .text-neutral-light-gray { color: #F5F5F5; }
+        .text-neutral-light-gold { color: #FDFFAF; } /* Updated for consistency */
+        .text-neutral-light-blue { color: #68C1FD; } /* Updated for consistency */
+        .text-neutral-light-green { color: #95E1A1; } /* Updated for consistency */        
+        .bg-neutral-light-gray { background-color: #E0E0E0; } /* Updated for consistency */
+
+        .text-neutral-dark-gray { color: #404040; }
+        .bg-neutral-dark-gray { background-color: #333333; }
+        .bg-neutral-dark-blue { background-color: #1A5276; } /* Darker blue for header */
+    </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+    <!-- Header -->
+    <header class="bg-neutral-dark-blue shadow-sm py-4 px-6 md:px-12 flex justify-between items-center">
+        <div class="flex items-center space-x-3">
+            <!-- Team Vitality Logo Placeholder - updated with new primary blue -->
+            <img class="bg-neutral-light-gray w-12 h-12 rounded-lg shadow-md" src="team vitality logo.png" alt="Team Vitality Logo: Stylized 'V' with a glowing leaf and overlapping shapes, symbolizing growth and community.">
+            <span class="text-5xl font-bold text-neutral-light-green font-logo">Team Vitality</span>
+        </div>
+        <nav>
+            <!-- Button updated with gradient -->
+            <a href="#signup" class="px-4 py-2 bg-gradient-accent-coral text-white font-semibold rounded-lg shadow-md hover:opacity-90 transition-opacity duration-300">Sign Up</a>
+        </nav>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-grow container mx-auto px-4 py-8 md:py-12">
+
+        <!-- Hero Section -->
+        <section class="flex flex-col md:flex-row items-center justify-center bg-gradient-primary-blue text-white p-8 md:p-12 shadow-lg mb-12 space-y-8 md:space-y-0 md:space-x-12">
+            <div class="md:w-1/2 text-center md:text-left">
+                <h1 class="text-4xl md:text-5xl font-bold leading-tight mb-4 text-neutral-light-gold">Your Compassionate AI Partner for Lasting Well-being.</h1>
+                <p class="text-lg md:text-xl opacity-90 mb-6">
+                    Team Vitality guides you with personalized insights and connects you to a supportive community, so you can build lasting health and confidence.
+                </p>
+                <!-- Button updated with gradient -->
+                <a href="#signup" class="inline-block px-8 py-4 bg-gradient-accent-coral text-white text-xl font-semibold rounded-xl shadow-lg hover:opacity-90 transition-opacity duration-300 transform hover:scale-105">
+                    Start Your Journey Today
+                </a>
+            </div>
+            <div class="md:w-1/2 flex justify-center">
+                <!-- Hero Image Placeholder: Abstract representation of personalized guidance - updated with new secondary green for placeholder -->
+                <img src="/personalized guidance.jpg" alt="Abstract image of soft, glowing pathways intertwining, representing personalized and adaptive health plans." class="w-full max-w-md rounded-xl shadow-xl">
+            </div>
+        </section>
+
+        <!-- Features Section -->
+        <section class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mb-12">
+
+            <!-- Feature 1: Empathetic AI Coach -->
+            <div class="bg-white p-6 shadow-md flex flex-col items-center text-center">
+                <!-- Image placeholder updated with primary blue for placeholder -->
+                <img src="/ai coach.jpg" alt="Abstract image of a soft, glowing orb with gentle lines radiating outwards, symbolizing an empathetic AI coach." class="w-32 h-32 mb-4 rounded-full shadow-md">
+                <h3 class="text-2xl font-semibold text-neutral-dark-gray mb-2">Empathetic AI Coaching</h3>
+                <p class="text-neutral-dark-gray opacity-80">
+                    Your AI partner listens, understands, and adapts to your unique needs, providing non-judgmental support every step of the way.
+                </p>
+            </div>
+
+            <!-- Feature 3: Seamless Tracking & Scheduling -->
+            <div class="bg-white p-6 shadow-md flex flex-col items-center text-center">
+                <!-- Image placeholder updated with primary blue for placeholder -->
+                <img src="tracking.jpg" alt="Abstract image of soft, interconnected circles with gentle lines, symbolizing seamless data synchronization and integrated scheduling." class="w-32 h-32 mb-4 rounded-full shadow-md">
+                <h3 class="text-2xl font-semibold text-neutral-dark-gray mb-2">Seamless Tracking & Scheduling</h3>
+                <p class="text-neutral-dark-gray opacity-80">
+                    Effortlessly log progress and manage your day with an intelligent schedule that keeps you on track.
+                </p>
+            </div>
+
+            <!-- Feature 2: Personalized Adaptive Plans -->
+            <div class="bg-white p-6 shadow-md flex flex-col items-center text-center">
+                <!-- Image placeholder updated with secondary green for placeholder -->
+                <img src="adaptive plans.jpg" alt="Abstract image of intertwining, adaptive pathways with soft glow points, representing flexible and tailored health plans." class="w-32 h-32 mb-4 rounded-full shadow-md">
+                <h3 class="text-2xl font-semibold text-neutral-dark-gray mb-2">Personalized Adaptive Plans</h3>
+                <p class="text-neutral-dark-gray opacity-80">
+                    Get meal and exercise plans that dynamically adjust to your feedback, preferences, and real-life situations.
+                </p>
+            </div>
+
+            <!-- Feature 4: Actionable Insights -->
+            <div class="bg-white p-6 shadow-md flex flex-col items-center text-center">
+                <!-- Image placeholder updated with secondary green for placeholder -->
+                <img src="insights.jpg" alt="Abstract image of transparent, overlapping shapes converging to a bright central point, representing clear, actionable insights." class="w-32 h-32 mb-4 rounded-full shadow-md">
+                <h3 class="text-2xl font-semibold text-neutral-dark-gray mb-2">Holistic & Actionable Insights</h3>
+                <p class="text-neutral-dark-gray opacity-80">
+                    Understand the connections in your health journey with AI-generated insights that reveal meaningful patterns.
+                </p>
+            </div>
+
+            <!-- Feature 5: Smart Accountability -->
+            <div class="bg-white p-6 shadow-md flex flex-col items-center text-center">
+                <!-- Image placeholder updated with primary blue for placeholder -->
+                <img src="accountability.jpg" alt="Abstract image of a gentle, persistent ripple effect, symbolizing smart accountability and gentle nudges." class="w-32 h-32 mb-4 rounded-full shadow-md">
+                <h3 class="text-2xl font-semibold text-neutral-dark-gray mb-2">Smart Accountability</h3>
+                <p class="text-neutral-dark-gray opacity-80">
+                    Stay motivated with customizable reminders and a unique system designed to keep you consistent, not overwhelmed.
+                </p>
+            </div>
+
+            <!-- Feature 6: Supportive Community -->
+            <div class="bg-white p-6 shadow-md flex flex-col items-center text-center">
+                <!-- Image placeholder updated with accent coral for placeholder -->
+                <img src="community.jpg" alt="Abstract image of multiple soft, abstract forms gently converging and interlocking with a shared glow, representing a supportive community." class="w-32 h-32 mb-4 rounded-full shadow-md">
+                <h3 class="text-2xl font-semibold text-neutral-dark-gray mb-2">Supportive Community</h3>
+                <p class="text-neutral-dark-gray opacity-80">
+                    Connect with trusted peers who understand your journey, sharing encouragement and practical tips.
+                </p>
+            </div>
+        </section>
+
+        <!-- Testimonials/Case Studies Snippets -->
+        <section class="bg-gradient-secondary-green text-neutral-dark-gray p-8 md:p-12 shadow-lg mb-12 text-center">
+            <h2 class="text-3xl md:text-4xl font-bold mb-6 text-neutral-light-gold">Real Journeys, Real Results</h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+                <!-- Testimonial 1 (Alex R.) -->
+                <div class="bg-white p-6 rounded-xl shadow-md">
+                    <p class="italic mb-4">"The app provided essential scaffolding. I met deadlines more consistently, managed my energy better, and felt less anxious."</p>
+                    <p class="font-semibold">- Alex R., Software Developer</p>
+                </div>
+                <!-- Testimonial 2 (Mark C.) -->
+                <div class="bg-white p-6 rounded-xl shadow-md">
+                    <p class="italic mb-4">"I was no longer just passively experiencing my conditions; I was actively partnering with technology and my community to rebuild routines."</p>
+                    <p class="font-semibold">- Mark C., IT Specialist</p>
+                </div>
+                <!-- Testimonial 3 (Sarah K.) -->
+                <div class="bg-white p-6 rounded-xl shadow-md">
+                    <p class="italic mb-4">"Beyond personal management, the app provided a sense of agency... turning my personal health journey into a source of empowerment."</p>
+                    <p class="font-semibold">- Sarah K., Graphic Designer</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Final Call to Action -->
+        <section id="signup" class="bg-gradient-primary-blue text-white p-8 md:p-12 shadow-lg text-center">
+            <h2 class="text-3xl md:text-4xl font-bold mb-6 text-neutral-light-gold">Ready to Reclaim Your Vitality?</h2>
+            <p class="text-lg md:text-xl opacity-90 mb-8">
+                Join Team Vitality today and experience a new paradigm in health partnership.
+            </p>
+            <!-- Button updated with gradient -->
+            <a href="#" class="inline-block px-10 py-5 bg-gradient-accent-coral text-white text-2xl font-bold rounded-full shadow-xl hover:opacity-90 transition-opacity duration-300 transform hover:scale-105">
+                Sign Up Now
+            </a>
+        </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-neutral-dark-gray text-neutral-light-gray py-6 px-4 md:px-12 text-center mt-12">
+        <p>&copy; 2025 Team Vitality. All rights reserved.</p>
+        <div class="flex justify-center space-x-6 mt-4">
+            <a href="#" class="hover:text-white transition-colors duration-200">Privacy Policy</a>
+            <a href="#" class="hover:text-white transition-colors duration-200">Terms of Service</a>
+            <a href="#" class="hover:text-white transition-colors duration-200">Contact Us</a>
+        </div>
+    </footer>
+
+</body>
+</html>

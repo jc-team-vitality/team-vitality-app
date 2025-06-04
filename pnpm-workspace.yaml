@@ -6,5 +6,6 @@ onlyBuiltDependencies:
   - '@nestjs/core'
   - '@parcel/watcher'
   - '@scarf/scarf'
+  - '@tailwindcss/oxide'
   - protobufjs
   - unrs-resolver

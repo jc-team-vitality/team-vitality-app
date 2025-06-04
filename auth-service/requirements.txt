@@ -9,3 +9,6 @@ google-cloud-secret-manager
 SQLAlchemy
 asyncpg
 google-cloud-kms
+black
+flake8
+isort
