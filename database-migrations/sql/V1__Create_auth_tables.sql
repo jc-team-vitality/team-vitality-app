@@ -24,9 +24,12 @@ CREATE TABLE app_users (
     email TEXT UNIQUE NOT NULL, -- User's email address
     first_name TEXT, -- Optional first name
     last_name TEXT, -- Optional last name
+    roles TEXT[] NOT NULL DEFAULT ARRAY['User']::TEXT[],
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+-- Add a comment to the app_users.roles column to clarify its purpose
+COMMENT ON COLUMN app_users.roles IS 'Array of roles assigned to the user, e.g., {User, Admin}. Defaults to {User}.';
 
 -- Table: user_provider_links
 -- Many-to-many join table linking users to their authenticated identity providers.
@@ -39,4 +42,23 @@ CREATE TABLE user_provider_links (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (provider_id, provider_user_id) -- Ensure unique link per IdP account
+);
+
+-- Insert initial data for Google OIDC Identity Provider
+INSERT INTO identity_providers (
+    name,
+    issuer_uri,
+    well_known_uri,
+    client_id,
+    client_secret_name,
+    scopes,
+    supports_refresh_token
+) VALUES (
+    'google',
+    'https://accounts.google.com',
+    'https://accounts.google.com/.well-known/openid-configuration',
+    '63554064837-l4jksh58sqoo7c9a983dcplfjp3c5djo.apps.googleusercontent.com',
+    'oidc_client_secret_google',
+    'openid email profile',
+    TRUE
 );

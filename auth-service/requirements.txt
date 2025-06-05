@@ -1,6 +1,6 @@
 fastapi
 uvicorn[standard]
-pydantic
+pydantic[email,url]
 python-dotenv
 httpx
 PyJWT
@@ -12,3 +12,4 @@ google-cloud-kms
 black
 flake8
 isort
+pydantic-settings

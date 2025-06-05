@@ -10,22 +10,10 @@ echo "To stop all services started by this script, try 'pkill -P $$' or close th
 echo "Alternatively, find PIDs with 'jobs -p' and use 'kill <PID>'."
 echo "========================================================"
 
-echo -e "\nStarting local PostgreSQL database using docker-compose..."
-docker-compose up -d db
+# Start DB and run migrations
+./scripts/start-db-and-migrate.sh
 
-# Wait for PostgreSQL to be ready
-until docker exec teamvitality-postgres-local pg_isready -U admin > /dev/null 2>&1; do
-  echo "Waiting for PostgreSQL to be ready..."
-  sleep 2
-done
-echo "PostgreSQL is ready."
-
-echo -e "\nRunning Flyway migrations..."
-docker run --rm --network=host -v $(pwd)/database-migrations/sql:/flyway/sql flyway/flyway:latest -url=jdbc:postgresql://localhost:5432/teamvitality_dev -user=admin -password=password migrate
-
-echo "Flyway migrations complete."
 echo "========================================================"
-
 echo -e "\nStarting web-application and api-gateway (monorepo) dev servers..."
 # Use pnpm to start both dev servers in parallel
 pnpm run dev &
@@ -37,13 +25,8 @@ echo "========================================================"
 
 # Start ai-service
 # Run in a subshell in the background
-echo -e "\nStarting ai-service (FastAPI) on port 8000..."
 (
-    cd ai-service && \
-    echo "Activating virtual environment for ai-service..." && \
-    source .venv/bin/activate && \
-    echo "Starting uvicorn for ai-service..." && \
-    uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    cd ai-service && ./start-ai-service.sh
 ) &
 AI_PID=$!
 echo "ai-service started with PID: $AI_PID"
@@ -52,13 +35,8 @@ echo "========================================================"
 
 # Start auth-service
 # Run in a subshell in the background
-echo -e "\nStarting auth-service (FastAPI) on port 8001..."
 (
-    cd auth-service && \
-    echo "Activating virtual environment for auth-service..." && \
-    source .venv/bin/activate && \
-    echo "Starting uvicorn for auth-service..." && \
-    uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
+    cd auth-service && ./start-auth-service.sh
 ) &
 AUTH_PID=$!
 echo "auth-service started with PID: $AUTH_PID"

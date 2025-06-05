@@ -10,22 +10,10 @@ echo -e "\n=== Installing dependencies for web-application and api-gateway (mono
 pnpm install
 
 echo -e "\n=== Installing dependencies for ai-service ==="
-(cd ai-service && \
-    echo "Creating/refreshing virtual environment and installing Python dependencies..." && \
-    python3 -m venv .venv && \
-    source .venv/bin/activate && \
-    pip install -r requirements.txt && \
-    echo "Python dependencies installed successfully." && \
-    deactivate )
+(cd ai-service && ./install-ai-deps.sh)
 
 echo -e "\n=== Installing dependencies for auth-service ==="
-(cd auth-service && \
-    echo "Creating/refreshing virtual environment and installing Python dependencies..." && \
-    python3 -m venv .venv && \
-    source .venv/bin/activate && \
-    pip install -r requirements.txt && \
-    echo "Python dependencies installed successfully." && \
-    deactivate )
+(cd auth-service && ./install-auth-deps.sh)
 
 echo -e "\n========================================================"
 echo "  All dependencies installed successfully!"

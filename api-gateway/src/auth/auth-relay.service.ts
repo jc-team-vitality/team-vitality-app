@@ -19,12 +19,15 @@ export class AuthRelayService {
     this.authServiceBaseUrl = this.configService.get<string>('AUTH_SERVICE_BASE_URL');
   }
 
-  private async getAuthServiceIdToken(): Promise<string> {
+  private async getAuthServiceAuthHeader(): Promise<{ Authorization?: string }> {
+    if (process.env.NODE_ENV === 'development') {
+      return {};
+    }
     try {
       const client = await this.googleAuth.getIdTokenClient(this.authServiceBaseUrl);
       const headers = await client.getRequestHeaders(this.authServiceBaseUrl);
       if (headers && headers.Authorization) {
-        return headers.Authorization.replace('Bearer ', '');
+        return { Authorization: headers.Authorization };
       }
       throw new Error('Failed to obtain ID token for auth-service');
     } catch (error) {
@@ -36,12 +39,12 @@ export class AuthRelayService {
   async initiateLogin(providerName: string): Promise<{ authorizationUrl: string; state: string }> {
     const targetUrl = `${this.authServiceBaseUrl}/oidc/initiate-login/${providerName}`;
     try {
-      const idToken = await this.getAuthServiceIdToken();
+      const authHeader = await this.getAuthServiceAuthHeader();
       const response = await firstValueFrom(
         this.httpService.post(
           targetUrl,
           {},
-          { headers: { Authorization: `Bearer ${idToken}` } },
+          { headers: { ...authHeader } },
         ),
       );
       return { authorizationUrl: response.data.authorization_url, state: response.data.state };
@@ -54,12 +57,12 @@ export class AuthRelayService {
   async exchangeCodeForToken(code: string, state: string): Promise<OIDCTokenExchangeResponse> {
     const targetUrl = `${this.authServiceBaseUrl}/oidc/token/exchange`;
     try {
-      const idToken = await this.getAuthServiceIdToken();
+      const authHeader = await this.getAuthServiceAuthHeader();
       const response = await firstValueFrom(
         this.httpService.post(
           targetUrl,
           { authorization_code: code, state: state },
-          { headers: { Authorization: `Bearer ${idToken}` } },
+          { headers: { ...authHeader } },
         ),
       );
       return response.data;
@@ -75,12 +78,12 @@ export class AuthRelayService {
   ): Promise<{ authorizationUrl: string; state: string }> {
     const targetUrl = `${this.authServiceBaseUrl}/oidc/link-account/initiate/${providerName}`;
     try {
-      const idToken = await this.getAuthServiceIdToken();
+      const authHeader = await this.getAuthServiceAuthHeader();
       const response = await firstValueFrom(
         this.httpService.post(
           targetUrl,
           { app_user_id: appUserId },
-          { headers: { Authorization: `Bearer ${idToken}` } },
+          { headers: { ...authHeader } },
         ),
       );
       if (response.data && response.data.authorization_url && response.data.state) {
@@ -99,11 +102,11 @@ export class AuthRelayService {
 
   async createIdpConfig(createDto: IdentityProviderConfigCreateDto): Promise<IdentityProviderConfigDto> {
     const targetUrl = `${this.authServiceBaseUrl}/admin/identity-providers/`;
-    const idToken = await this.getAuthServiceIdToken();
+    const authHeader = await this.getAuthServiceAuthHeader();
     try {
       const response = await firstValueFrom(
         this.httpService.post(targetUrl, createDto, {
-          headers: { Authorization: `Bearer ${idToken}` },
+          headers: { ...authHeader },
         }),
       );
       return response.data;
@@ -115,11 +118,11 @@ export class AuthRelayService {
 
   async listIdpConfigs(skip: number = 0, limit: number = 100): Promise<IdentityProviderConfigDto[]> {
     const targetUrl = `${this.authServiceBaseUrl}/admin/identity-providers/?skip=${skip}&limit=${limit}`;
-    const idToken = await this.getAuthServiceIdToken();
+    const authHeader = await this.getAuthServiceAuthHeader();
     try {
       const response = await firstValueFrom(
         this.httpService.get(targetUrl, {
-          headers: { Authorization: `Bearer ${idToken}` },
+          headers: { ...authHeader },
         }),
       );
       return response.data;
@@ -131,11 +134,11 @@ export class AuthRelayService {
 
   async getIdpConfig(providerId: string): Promise<IdentityProviderConfigDto> {
     const targetUrl = `${this.authServiceBaseUrl}/admin/identity-providers/${providerId}`;
-    const idToken = await this.getAuthServiceIdToken();
+    const authHeader = await this.getAuthServiceAuthHeader();
     try {
       const response = await firstValueFrom(
         this.httpService.get(targetUrl, {
-          headers: { Authorization: `Bearer ${idToken}` },
+          headers: { ...authHeader },
         }),
       );
       return response.data;
@@ -147,11 +150,11 @@ export class AuthRelayService {
 
   async updateIdpConfig(providerId: string, updateDto: IdentityProviderConfigUpdateDto): Promise<IdentityProviderConfigDto> {
     const targetUrl = `${this.authServiceBaseUrl}/admin/identity-providers/${providerId}`;
-    const idToken = await this.getAuthServiceIdToken();
+    const authHeader = await this.getAuthServiceAuthHeader();
     try {
       const response = await firstValueFrom(
         this.httpService.put(targetUrl, updateDto, {
-          headers: { Authorization: `Bearer ${idToken}` },
+          headers: { ...authHeader },
         }),
       );
       return response.data;
@@ -163,11 +166,11 @@ export class AuthRelayService {
 
   async deleteIdpConfig(providerId: string): Promise<void> {
     const targetUrl = `${this.authServiceBaseUrl}/admin/identity-providers/${providerId}`;
-    const idToken = await this.getAuthServiceIdToken();
+    const authHeader = await this.getAuthServiceAuthHeader();
     try {
       await firstValueFrom(
         this.httpService.delete(targetUrl, {
-          headers: { Authorization: `Bearer ${idToken}` },
+          headers: { ...authHeader },
         }),
       );
     } catch (error) {
