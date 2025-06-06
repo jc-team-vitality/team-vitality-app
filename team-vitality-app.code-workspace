@@ -21,5 +21,24 @@
             "path": "./web-platform"
         }
     ],
-    "settings": {}
+    "settings": {},
+    "compounds": [
+        {
+            "name": "AI + Auth + Web Platform",
+            "configurations": [
+                {
+                    "name": "AI Service",
+                    "path": "./ai-service"
+                },
+                {
+                    "name": "Auth Service",
+                    "path": "./auth-service"
+                },
+                {
+                    "name": "Web Platform",
+                    "path": "./web-platform"
+                }
+            ]
+        }
+    ]
 }
