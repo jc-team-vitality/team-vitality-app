@@ -7,6 +7,7 @@ import { AuthController } from './auth.controller';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { KmsJwtService } from './kms-jwt.service';
+import { KmsKeyCacheService } from './kms-key-cache.service';
 
 @Module({
   imports: [
@@ -15,7 +16,7 @@ import { KmsJwtService } from './kms-jwt.service';
     PassportModule.register({ defaultStrategy: 'jwt-session' }),
   ],
   controllers: [AuthController],
-  providers: [AuthRelayService, JwtStrategy, JwtAuthGuard, KmsJwtService],
+  providers: [AuthRelayService, JwtStrategy, JwtAuthGuard, KmsJwtService, KmsKeyCacheService],
   exports: [AuthRelayService],
 })
-export class AuthModule {}
+export class AuthModule { }

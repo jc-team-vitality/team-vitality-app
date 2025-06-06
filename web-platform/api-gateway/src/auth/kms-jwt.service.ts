@@ -1,20 +1,20 @@
 import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { KeyManagementServiceClient } from '@google-cloud/kms';
+import { KmsKeyCacheService } from './kms-key-cache.service';
 import * as crypto from 'crypto';
 
 @Injectable()
 export class KmsJwtService {
-  private kmsClient: KeyManagementServiceClient;
-  private kmsKeyVersionName: string;
   private jwtIssuer: string;
   private jwtAudience: string;
   private jwtAlgorithm: string;
   private jwtExpiresInSeconds: number;
+  private kmsKeyVersionName: string;
 
-  constructor(private readonly configService: ConfigService) {
-    this.kmsClient = new KeyManagementServiceClient();
-    this.kmsKeyVersionName = this.configService.get<string>('KMS_SIGNING_KEY_ID');
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly kmsKeyCacheService: KmsKeyCacheService,
+  ) {
     this.jwtIssuer = this.configService.get<string>('JWT_ISSUER');
     this.jwtAudience = this.configService.get<string>('JWT_AUDIENCE');
     this.jwtAlgorithm = this.configService.get<string>('JWT_ALGORITHM', 'ES256');
@@ -26,13 +26,16 @@ export class KmsJwtService {
     } else {
       this.jwtExpiresInSeconds = parseInt(expiresInStr, 10);
     }
+    this.kmsKeyVersionName = this.configService.get<string>('KMS_SIGNING_KEY_ID');
   }
 
   async signKmsJwt(payload: Record<string, any>): Promise<string> {
+    // Get the current versioned key and public key from the shared cache service
+    const { versionId } = await this.kmsKeyCacheService.getCurrentPublicKeyByKeyId(this.kmsKeyVersionName);
     const header = {
       alg: this.jwtAlgorithm,
       typ: 'JWT',
-      kid: this.kmsKeyVersionName,
+      kid: versionId,
     };
     const iat = Math.floor(Date.now() / 1000);
     const exp = iat + this.jwtExpiresInSeconds;
@@ -56,8 +59,9 @@ export class KmsJwtService {
       throw new InternalServerErrorException(`Unsupported signing algorithm for KMS: ${this.jwtAlgorithm}`);
     }
     try {
-      const [signResponse] = await this.kmsClient.asymmetricSign({
-        name: this.kmsKeyVersionName,
+      // Use the versioned key id for signing
+      const [signResponse] = await this.kmsKeyCacheService['kmsClient'].asymmetricSign({
+        name: versionId,
         digest: digest,
       });
       if (!signResponse.signature) {
