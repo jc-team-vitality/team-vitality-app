@@ -253,16 +253,21 @@ async def validate_id_token(
             break
     if not matching_key_data:
         raise HTTPException(status_code=400, detail="No matching JWK found for token 'kid'.")
-    if idp_config.issuer_uri != well_known_config.get("issuer"):
+    # Normalize issuer URIs by stripping trailing slashes for comparison
+    def normalize_issuer(issuer):
+        return str(issuer).rstrip('/') if issuer else ''
+    
+    if normalize_issuer(idp_config.issuer_uri) != normalize_issuer(well_known_config.get("issuer")):
         raise HTTPException(status_code=401, detail="Configured issuer does not match well-known issuer.")
     try:
-        public_key = jwt.algorithms.RSAAlgorithm.from_jwk(matching_key_data)
+        from jwt import PyJWK
+        public_key = PyJWK.from_dict(matching_key_data).key
         decoded_token = jwt.decode(
             id_token,
             public_key,
             algorithms=[unverified_header.get("alg", "RS256")],
             audience=idp_config.client_id,
-            issuer=idp_config.issuer_uri
+            issuer=normalize_issuer(idp_config.issuer_uri)
         )
         if decoded_token.get("nonce") != expected_nonce:
             raise HTTPException(status_code=400, detail="ID token nonce mismatch.")
