@@ -13,6 +13,6 @@ done
 echo "PostgreSQL is ready."
 
 echo "Running Flyway migrations..."
-docker run --rm --network=host -v $(pwd)/database-migrations/sql:/flyway/sql flyway/flyway:latest -url=jdbc:postgresql://localhost:5432/teamvitality_dev -user=admin -password=password migrate
+docker run --rm --network=host -v $(pwd)/flyway/migrations:/flyway/sql flyway/flyway:latest -url=jdbc:postgresql://localhost:5432/teamvitality_dev -user=admin -password=password migrate
 
 echo "Flyway migrations complete."

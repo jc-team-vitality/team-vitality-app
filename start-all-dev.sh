@@ -11,11 +11,12 @@ echo "Alternatively, find PIDs with 'jobs -p' and use 'kill <PID>'."
 echo "========================================================"
 
 # Start DB and run migrations
-./scripts/start-db-and-migrate.sh
+./db-platform/start-db-and-migrate.sh
 
 echo "========================================================"
 echo -e "\nStarting web-application and api-gateway (monorepo) dev servers..."
 # Use pnpm to start both dev servers in parallel
+cd web-platform &&
 pnpm run dev &
 MONOREPO_PID=$!
 echo "web-application and api-gateway dev servers started with PID: $MONOREPO_PID"

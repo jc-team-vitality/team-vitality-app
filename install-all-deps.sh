@@ -7,7 +7,7 @@ echo "========================================================"
 
 echo -e "\n=== Installing dependencies for web-application and api-gateway (monorepo) ==="
 # Use pnpm to install dependencies for both web-application and api-gateway
-pnpm install
+(cd web-platform && pnpm install)
 
 echo -e "\n=== Installing dependencies for ai-service ==="
 (cd ai-service && ./install-ai-deps.sh)

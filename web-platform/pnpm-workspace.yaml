@@ -1,7 +1,7 @@
 packages:
   - api-gateway
   - web-application
-  - packages/*
+  - shared-dtos
 onlyBuiltDependencies:
   - '@nestjs/core'
   - '@parcel/watcher'
