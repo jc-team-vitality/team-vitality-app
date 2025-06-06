@@ -1,0 +1,25 @@
+{
+    "folders": [
+        {
+            "name": "Monorepo Root",
+            "path": "."
+        },
+        {
+            "name": "AI Service",
+            "path": "./ai-service"
+        },
+        {
+            "name": "Auth Service",
+            "path": "./auth-service"
+        },
+        {
+            "name": "DB Platform",
+            "path": "./db-platform"
+        },
+        {
+            "name": "Web Platform",
+            "path": "./web-platform"
+        }
+    ],
+    "settings": {}
+}
