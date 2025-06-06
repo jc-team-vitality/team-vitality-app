@@ -21,24 +21,32 @@
             "path": "./web-platform"
         }
     ],
-    "settings": {},
-    "compounds": [
-        {
-            "name": "AI + Auth + Web Platform",
-            "configurations": [
-                {
-                    "name": "AI Service",
-                    "path": "./ai-service"
-                },
-                {
-                    "name": "Auth Service",
-                    "path": "./auth-service"
-                },
-                {
-                    "name": "Web Platform",
-                    "path": "./web-platform"
-                }
-            ]
-        }
-    ]
+    "launch": {
+        "compounds": [
+            {
+                "name": "Auth + Web Platform",
+                "configurations": [
+                    "Launch Auth Service",
+                    "Launch Web Platform"
+                ]
+            }
+        ],
+        "configurations": [] // This can be empty, as your individual configs are in sub-folders
+    },
+    "settings": {
+        "editor.tabSize": 2,
+        "editor.insertSpaces": true,
+        "editor.formatOnSave": true,
+        "files.exclude": {
+            "**/node_modules": true,
+            "**/dist": true,
+            "**/.next": true
+        },
+        "search.exclude": {
+            "**/node_modules": true,
+            "**/dist": true,
+            "**/.next": true
+        },
+        "typescript.tsdk": "./node_modules/typescript/lib"
+    }
 }

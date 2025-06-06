@@ -33,7 +33,8 @@ router = APIRouter()
 async def initiate_oidc_login(
     provider_name: str = Path(..., description="The common name of the identity provider (e.g., 'google')"),
     db: firestore_v1.AsyncClient = Depends(get_firestore_db),
-    db_pg_session: AsyncSession = Depends(get_async_db_session)
+    db_pg_session: AsyncSession = Depends(get_async_db_session),
+    http_client: httpx.AsyncClient = Depends(lambda: httpx.AsyncClient())
 ):
     """
     Initiates the OIDC login flow for a given identity provider.
@@ -66,7 +67,7 @@ async def initiate_oidc_login(
     )
 
     # --- Fetch the authorization endpoint from the provider's .well-known config ---
-    well_known_config = await fetch_idp_well_known_config_impl(idp_config.well_known_uri, db)
+    well_known_config = await fetch_idp_well_known_config_impl(idp_config.well_known_uri, db, http_client)
     authorization_endpoint = well_known_config.get("authorization_endpoint")
     if not authorization_endpoint:
         raise HTTPException(status_code=500, detail=f"Could not retrieve authorization endpoint for provider '{provider_name}'.")
@@ -303,7 +304,8 @@ async def initiate_oidc_link_account(
     provider_name: str = Path(..., description="The common name of the identity provider to link (e.g., 'google')"),
     link_request: OIDCInitiateLinkAccountRequest = Body(...),
     db: firestore_v1.AsyncClient = Depends(get_firestore_db),
-    db_pg_session: AsyncSession = Depends(get_async_db_session)
+    db_pg_session: AsyncSession = Depends(get_async_db_session),
+    http_client: httpx.AsyncClient = Depends(lambda: httpx.AsyncClient())
 ):
     """
     Initiates the OIDC account linking flow for an authenticated user.
@@ -339,7 +341,7 @@ async def initiate_oidc_link_account(
     )
 
     # --- Fetch the authorization endpoint from the provider's .well-known config ---
-    well_known_config = await fetch_idp_well_known_config_impl(idp_config.well_known_uri, db)
+    well_known_config = await fetch_idp_well_known_config_impl(idp_config.well_known_uri, db, http_client)
     authorization_endpoint = well_known_config.get("authorization_endpoint")
     if not authorization_endpoint:
         raise HTTPException(status_code=500, detail=f"Could not retrieve authorization endpoint for provider '{provider_name}'.")
