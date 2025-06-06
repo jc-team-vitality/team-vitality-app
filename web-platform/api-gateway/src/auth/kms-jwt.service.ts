@@ -14,15 +14,10 @@ export class KmsJwtService {
 
   constructor(private readonly configService: ConfigService) {
     this.kmsClient = new KeyManagementServiceClient();
-    const projectId = this.configService.get<string>('KMS_PROJECT_ID');
-    const locationId = this.configService.get<string>('KMS_LOCATION_ID');
-    const keyRingId = this.configService.get<string>('KMS_KEY_RING_ID');
-    const keyId = this.configService.get<string>('KMS_SIGNING_KEY_ID');
-    const versionId = this.configService.get<string>('KMS_SIGNING_KEY_VERSION_ID');
-    this.kmsKeyVersionName = `projects/${projectId}/locations/${locationId}/keyRings/${keyRingId}/cryptoKeys/${keyId}/cryptoKeyVersions/${versionId}`;
+    this.kmsKeyVersionName = this.configService.get<string>('KMS_SIGNING_KEY_ID');
     this.jwtIssuer = this.configService.get<string>('JWT_ISSUER');
     this.jwtAudience = this.configService.get<string>('JWT_AUDIENCE');
-    this.jwtAlgorithm = this.configService.get<string>('JWT_ALGORITHM', 'RS256');
+    this.jwtAlgorithm = this.configService.get<string>('JWT_ALGORITHM', 'ES256');
     const expiresInStr = this.configService.get<string>('JWT_SESSION_EXPIRES_IN', '7d');
     if (expiresInStr.endsWith('d')) {
       this.jwtExpiresInSeconds = parseInt(expiresInStr.slice(0, -1), 10) * 24 * 60 * 60;
