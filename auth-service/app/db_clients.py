@@ -11,16 +11,26 @@ from google.cloud import kms_v1
 # This will use Application Default Credentials when deployed on GCP (e.g., Cloud Run)
 # For local development, ensure GOOGLE_APPLICATION_CREDENTIALS env var is set.
 firestore_db = None
-if settings.GCP_PROJECT_ID_FOR_FIRESTORE:
-    firestore_db = firestore_v1.AsyncClient(project=settings.GCP_PROJECT_ID_FOR_FIRESTORE)
+if settings.GCP_PROJECT_ID:
+    if settings.FIRESTORE_DATABASE_ID:
+        # Connect to a specific named database instance within the project
+        firestore_db = firestore_v1.AsyncClient(
+            project=settings.GCP_PROJECT_ID,
+            database=settings.FIRESTORE_DATABASE_ID # Specify the named database ID here
+        )
+    else:
+        # Connect to the (default) database instance within the project
+        firestore_db = firestore_v1.AsyncClient(
+            project=settings.GCP_PROJECT_ID
+        )
 else:
-    print("WARNING: GCP_PROJECT_ID_FOR_FIRESTORE not set. Firestore client not initialized.")
+    print("WARNING: GCP_PROJECT_ID not set. Firestore client not initialized.")
 
 # Dependency for FastAPI to get Firestore client
 async def get_firestore_db():
     if firestore_db is None:
         # This case should ideally not be hit if config is correct and app starts
-        raise RuntimeError("Firestore client not initialized. Check GCP_PROJECT_ID_FOR_FIRESTORE setting.")
+        raise RuntimeError("Firestore client not initialized. Check GCP_PROJECT_ID setting.")
     return firestore_db
 
 # Initialize Secret Manager client
