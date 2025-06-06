@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_KMS_KEY_ID: Optional[str] = None
 
     # Firestore settings
-    GCP_PROJECT_ID_FOR_FIRESTORE: Optional[str] = None # To be set in .env
+    FIRESTORE_DATABASE_ID: Optional[str] = None # To be set in .env
     GCP_PROJECT_ID: Optional[str] = None # To be set in .env, used for Secret Manager
     FIRESTORE_OIDC_STATE_COLLECTION: str = "oidc_states"
     OIDC_STATE_TTL_SECONDS: int = 900 # 15 minutes
